@@ -1,0 +1,116 @@
+FROM chapel/chapel:2.5.0
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG CHAPEL_VERSION=2.5.0
+ARG ARROW_VERSION=19.0.1
+ARG ARKOUDA_BRANCH=master
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+  build-essential \
+  cmake \
+  git \
+  wget \
+  curl \
+  python3 \
+  python3-pip \
+  python3-setuptools \
+  python3-wheel \
+  libtool \
+  pkg-config \
+  autoconf \
+  automake \
+  bison \
+  flex \
+  libssl-dev \
+  libffi-dev \
+  libxml2-dev \
+  libbz2-dev \
+  liblz4-dev \
+  libzstd-dev \
+  libsnappy-dev \
+  libbrotli-dev \
+  zlib1g-dev \
+  libzmq3-dev \
+  libhdf5-dev \
+  libiconv-hook-dev \
+  libidn2-0-dev \
+  ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
+# ENV CHPL_LLVM=system
+# # Install Chapel
+# RUN wget https://github.com/chapel-lang/chapel/releases/download/${CHAPEL_VERSION}/chapel-${CHAPEL_VERSION}.tar.gz && \
+#   tar -xzf chapel-${CHAPEL_VERSION}.tar.gz && \
+#   cd chapel-${CHAPEL_VERSION} && \
+#   . util/setchplenv.sh && \
+#   make -j$(nproc) && \
+#   make install && \
+#   cd .. && rm -rf chapel-${CHAPEL_VERSION} chapel-${CHAPEL_VERSION}.tar.gz
+
+# Build and install ZeroMQ (if not available as suitable package)
+# (libzmq3-dev is installed above, so this step is skipped)
+
+WORKDIR /opt
+
+# Build and install Apache Arrow from source with compression and Parquet support
+# RUN wget https://github.com/apache/arrow/releases/download/apache-arrow-${ARROW_VERSION}/apache-arrow-${ARROW_VERSION}.tar.gz && \
+#   tar -xzf apache-arrow-${ARROW_VERSION}.tar.gz && \
+#   cd apache-arrow-${ARROW_VERSION}/cpp && \
+#   mkdir build && cd build && \
+#   cmake .. \
+#   -DCMAKE_INSTALL_PREFIX=/usr/local \
+#   -DARROW_PARQUET=ON \
+#   -DARROW_PYTHON=ON \
+#   -DARROW_BUILD_TESTS=OFF \
+#   -DARROW_WITH_SNAPPY=ON \
+#   -DARROW_WITH_ZLIB=ON \
+#   -DARROW_WITH_BROTLI=ON \
+#   -DARROW_WITH_BZ2=ON \
+#   -DARROW_WITH_LZ4=ON \
+#   -DARROW_WITH_ZSTD=ON && \
+#   make -j$(nproc) && make install && \
+#   ldconfig && \
+#   cd ../../../ && rm -rf arrow-${ARROW_VERSION} apache-arrow-${ARROW_VERSION}.tar.gz
+
+# Build and install HDF5 (if not available as suitable package)
+# (libhdf5-dev is installed above, so this step is skipped)
+
+# Build and install iconv (if not available as suitable package)
+# (libiconv-hook-dev is installed above, so this step is skipped)
+
+# Build and install idn2 (if not available as suitable package)
+# (libidn2-0-dev is installed above, so this step is skipped)
+
+WORKDIR /
+
+# RUN for pkg in libhdf5-dev libiconv libidn2-0-dev libbz2-dev libzmq3-dev; do \
+#     prefix=$(dpkg -L "$pkg" 2>/dev/null | grep -E '^/usr|^/usr/local' | grep -E '/include$|/lib$' | head -n1 | sed -E 's:/(include|lib)$::'); \
+#     if [ -n "$prefix" ]; then \
+#       echo "\$(eval \$(call add-path,$prefix))"; \
+#     fi; \
+#   done > /Makefile.paths
+
+# Clone the Arkouda repository
+RUN git clone --branch ${ARKOUDA_BRANCH} https://github.com/bears-r-us/arkouda.git && \
+    cd arkouda && \
+    git submodule update --init --recursive && \
+    make -j$(nproc) install-deps
+
+    # Install Python dependencies for Arkouda
+RUN python3 -m venv /opt/arkouda-env && \
+  . /opt/arkouda-env/bin/activate && \
+  pip3 install --upgrade pip setuptools wheel && \
+  pip3 install numpy pandas pyarrow h5py zmq jupyter
+
+# Build and install Arkouda server
+WORKDIR /
+RUN cd arkouda && \
+  make -j$(nproc)
+
+# Install Arkouda Python client
+RUN . /opt/arkouda-env/bin/activate && \
+  pip3 install .
+
+
+# WORKDIR /workspace
