@@ -97,20 +97,21 @@ RUN git clone --branch ${ARKOUDA_BRANCH} https://github.com/bears-r-us/arkouda.g
     git submodule update --init --recursive && \
     make -j$(nproc) install-deps
 
-    # Install Python dependencies for Arkouda
+# Install Python dependencies for Arkouda
+WORKDIR /arkouda
 RUN python3 -m venv /opt/arkouda-env && \
   . /opt/arkouda-env/bin/activate && \
   pip3 install --upgrade pip setuptools wheel && \
-  pip3 install numpy pandas pyarrow h5py zmq jupyter
+  pip3 install numpy pandas pyarrow h5py zmq jupyter cloudpickle pytest pytest-env
 
 # Build and install Arkouda server
-WORKDIR /
-RUN cd arkouda && \
-  make -j$(nproc)
+WORKDIR /arkouda
+RUN make -j$(nproc)
 
 # Install Arkouda Python client
+WORKDIR /arkouda
 RUN . /opt/arkouda-env/bin/activate && \
   pip3 install .
 
-
-# WORKDIR /workspace
+ENV PATH="/arkouda:$PATH"
+ENV PATH="/opt/arkouda-env/bin:$PATH"
