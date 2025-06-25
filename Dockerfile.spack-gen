@@ -10,6 +10,7 @@ set -o noclobber \
 &&   echo '  # add package specs to the `specs` list' \
 &&   echo '  specs:' \
 &&   echo '  - arkouda@master ^lz4@1.9' \
+&&   echo '  - py-arkouda' \
 &&   echo '  - py-ipython' \
 &&   echo '  view: /opt/views/view' \
 &&   echo '  concretizer:' \
