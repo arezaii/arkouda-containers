@@ -1,0 +1,381 @@
+# Multi-stage Containerfile for Chapel and Arkouda with OFI + libfabric support
+# Optimized for distributed execution on HPE Cray EX systems
+# Chapel CHPL_COMM=ofi uses libfabric directly (not GASNet)
+# Using Ubuntu 24.04 (Noble) for GLIBC 2.39 compatibility with host SLURM
+
+FROM ubuntu:24.04 AS base
+
+# Build arguments for version control
+ARG LIBFABRIC_VERSION=1.19.0
+ARG SLURM_VERSION=23.02.7
+ARG MPICH_VERSION=4.1.2
+ARG LIBICONV_VERSION=1.17
+ARG ARROW_VERSION=19.0.1-1
+ARG CHAPEL_VERSION=2.6.0
+ARG ARKOUDA_VERSION=2025.12.16
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ENV CHPL_HOME=/opt/chapel
+ENV ARKOUDA_HOME=/opt/arkouda
+ENV PATH=${CHPL_HOME}/bin/linux64-x86_64:${CHPL_HOME}/util:${PATH}
+
+# Install Chapel dependencies, SLURM, and additional tools
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    m4 \
+    perl \
+    python3 \
+    python3-dev \
+    python3-venv \
+    python3-pip \
+    bash \
+    make \
+    mawk \
+    git \
+    pkg-config \
+    cmake \
+    llvm-dev \
+    llvm \
+    clang \
+    libclang-dev \
+    libclang-cpp-dev \
+    libedit-dev \
+    gfortran \
+    wget \
+    curl \
+    libnuma-dev \
+    libhwloc-dev \
+    autoconf \
+    automake \
+    libtool \
+    flex \
+    bison \
+    vim \
+    slurm-wlm \
+    slurm-client \
+    munge \
+    libmunge-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# ========================================
+# Stage 1: Build libfabric (OFI) for HPE Cray EX
+# ========================================
+FROM base AS libfabric-builder
+
+# Re-declare build argument for this stage
+ARG LIBFABRIC_VERSION=1.19.0
+
+# Build libfabric from source for OFI support on HPE Cray EX systems
+RUN cd /tmp && \
+    wget https://github.com/ofiwg/libfabric/releases/download/v${LIBFABRIC_VERSION}/libfabric-${LIBFABRIC_VERSION}.tar.bz2 && \
+    tar --no-same-owner -xjf libfabric-${LIBFABRIC_VERSION}.tar.bz2 && \
+    cd libfabric-${LIBFABRIC_VERSION} && \
+    ./configure --prefix=/opt/libfabric \
+                --enable-sockets \
+                --enable-tcp \
+                --enable-udp \
+                --enable-rxm \
+                --disable-usnic \
+                --disable-static && \
+    make -j$(nproc) && \
+    make install
+
+# ========================================
+# Stage 2: Build PMI2 libraries from SLURM
+# ========================================
+FROM base AS pmi2-builder
+
+# Re-declare build argument for this stage
+ARG SLURM_VERSION=23.02.7
+
+# Build SLURM's PMI2 library (standalone, no host dependencies)
+RUN cd /tmp && \
+    wget https://download.schedmd.com/slurm/slurm-${SLURM_VERSION}.tar.bz2 && \
+    tar --no-same-owner -xjf slurm-${SLURM_VERSION}.tar.bz2 && \
+    cd slurm-${SLURM_VERSION} && \
+    ./configure --prefix=/opt/slurm-pmi \
+                --with-pmix=no \
+                --with-ucx=no \
+                --disable-dependency-tracking && \
+    cd contribs/pmi2 && \
+    make -j$(nproc) && \
+    make install
+
+# ========================================
+# Stage 3: Build MPICH
+# ========================================
+FROM base AS mpich-builder
+
+# Re-declare build argument for this stage
+ARG MPICH_VERSION=4.1.2
+
+# Copy libfabric and PMI2 from previous stages
+COPY --from=libfabric-builder /opt/libfabric /opt/libfabric
+COPY --from=pmi2-builder /opt/slurm-pmi /opt/slurm-pmi
+
+# Build MPICH with OFI support for HPE Cray EX
+RUN cd /tmp && \
+    wget http://www.mpich.org/static/downloads/${MPICH_VERSION}/mpich-${MPICH_VERSION}.tar.gz && \
+    tar --no-same-owner -xzf mpich-${MPICH_VERSION}.tar.gz && \
+    cd mpich-${MPICH_VERSION} && \
+    ./configure --prefix=/opt/mpich \
+                --with-device=ch4:ofi \
+                --with-libfabric=/opt/libfabric \
+                --with-pmi=pmi2 \
+                --with-pmi-include=/opt/slurm-pmi/include \
+                --with-pmi-lib=/opt/slurm-pmi/lib \
+                --enable-shared \
+                --enable-fast=all,O3 && \
+    make -j$(nproc) && \
+    make install
+
+# ========================================
+# Stage 4: Build Chapel with OFI communication
+# ========================================
+FROM base AS chapel-builder
+
+# Re-declare build argument for this stage
+ARG CHAPEL_VERSION=2.6.0
+
+# Copy dependencies from previous stages
+COPY --from=libfabric-builder /opt/libfabric /opt/libfabric
+COPY --from=pmi2-builder /opt/slurm-pmi /opt/slurm-pmi
+COPY --from=mpich-builder /opt/mpich /opt/mpich
+
+# Update library paths
+ENV LD_LIBRARY_PATH=/opt/libfabric/lib:/opt/slurm-pmi/lib:/opt/mpich/lib:${LD_LIBRARY_PATH}
+ENV PKG_CONFIG_PATH=/opt/libfabric/lib/pkgconfig:/opt/mpich/lib/pkgconfig:${PKG_CONFIG_PATH}
+ENV LIBRARY_PATH=/opt/slurm-pmi/lib:/opt/mpich/lib:/opt/libfabric/lib:${LIBRARY_PATH}
+ENV CPATH=/opt/slurm-pmi/include:/opt/mpich/include:${CPATH}
+
+# Download Chapel source
+RUN cd /opt && \
+    git clone --depth 1 --branch ${CHAPEL_VERSION} https://github.com/chapel-lang/chapel.git
+
+# Build Chapel with OFI communication layer for HPE Cray EX
+# use PMI2 from MPICH for build, host PMI2 libs bound at runtime
+ENV CHPL_COMM=ofi
+ENV CHPL_COMM_OFI_OOB=pmi2
+ENV CHPL_LIBFABRIC=system
+ENV CHPL_TARGET_COMPILER=gnu
+ENV CHPL_LAUNCHER=slurm-srun
+ENV CHPL_LLVM=system
+ENV CHPL_HOST_PLATFORM=linux64
+ENV CHPL_TARGET_PLATFORM=hpe-cray-ex
+
+# Create /opt/host-libs directory for runtime library bindings
+RUN mkdir -p /opt/host-libs
+
+RUN cd /opt/chapel && \
+    make -j$(nproc) && \
+    make chapel-py-venv
+
+# ========================================
+# Stage 5: Build Arkouda
+# ========================================
+FROM base AS arkouda-builder
+
+# Re-declare build arguments for this stage
+ARG LIBICONV_VERSION=1.17
+ARG ARROW_VERSION=19.0.1-1
+ARG ARKOUDA_VERSION=2025.12.16
+
+# Copy all dependencies
+COPY --from=libfabric-builder /opt/libfabric /opt/libfabric
+COPY --from=pmi2-builder /opt/slurm-pmi /opt/slurm-pmi
+COPY --from=mpich-builder /opt/mpich /opt/mpich
+COPY --from=chapel-builder /opt/chapel /opt/chapel
+
+# Set up environment
+ENV CHPL_HOME=/opt/chapel
+ENV PATH=${CHPL_HOME}/bin/linux64-x86_64:${CHPL_HOME}/util:/opt/mpich/bin:${PATH}
+ENV LD_LIBRARY_PATH=/opt/libfabric/lib:/opt/slurm-pmi/lib:/opt/mpich/lib:${LD_LIBRARY_PATH}
+ENV LIBRARY_PATH=/opt/slurm-pmi/lib:/opt/mpich/lib:/opt/libfabric/lib:${LIBRARY_PATH}
+ENV CPATH=/opt/slurm-pmi/include:/opt/mpich/include:${CPATH}
+
+# Set Chapel configuration (must match build environment)
+ENV CHPL_COMM=ofi
+ENV CHPL_COMM_OFI_OOB=pmi2
+ENV CHPL_LIBFABRIC=system
+ENV CHPL_TARGET_COMPILER=gnu
+ENV CHPL_LAUNCHER=slurm-srun
+ENV CHPL_LLVM=system
+ENV CHPL_TARGET_PLATFORM=hpe-cray-ex
+ENV CHPL_HOST_PLATOFMR=linux64
+
+# Create Python venv for Arkouda dependencies
+ENV ARKOUDA_VENV=/opt/arkouda-venv
+RUN python3 -m venv ${ARKOUDA_VENV}
+ENV PATH=${ARKOUDA_VENV}/bin:${PATH}
+
+# Download Arkouda source first to access dependency definitions
+RUN cd /opt && \
+    git clone --depth 1 --branch v${ARKOUDA_VERSION} https://github.com/Bears-R-Us/arkouda.git
+
+# Install build dependencies needed for pyproject.toml parsing
+RUN ${ARKOUDA_VENV}/bin/pip install --no-cache-dir \
+    setuptools>=64 \
+    wheel \
+    versioneer[toml]>=0.22
+
+# Install Arkouda's runtime dependencies using its own pyproject.toml
+# This ensures we use the exact versions that Arkouda specifies
+RUN cd /opt/arkouda && \
+    ${ARKOUDA_VENV}/bin/pip install --no-cache-dir -e .[dev]
+
+# Configure Arkouda build environment
+ENV ARKOUDA_HOME=/opt/arkouda
+ENV ARKOUDA_ZMQ_PATH=/usr/lib/x86_64-linux-gnu
+ENV ARKOUDA_HDF5_PATH=/usr/lib/x86_64-linux-gnu/hdf5/serial
+
+# Install additional dependencies for Arkouda
+# Requirements: zeromq>=4.2.5, hdf5, iconv, idn2, Arrow/Parquet
+# Add Apache Arrow repository and install pre-built packages for 19.0.1
+RUN apt-get update && apt-get install -y \
+    apt-transport-https \
+    ca-certificates \
+    gnupg \
+    lsb-release \
+    wget \
+    && wget -qO- https://apache.jfrog.io/artifactory/arrow/$(lsb_release --id --short | tr 'A-Z' 'a-z')/apache-arrow-apt-source-latest-$(lsb_release --codename --short).deb -O /tmp/apache-arrow.deb \
+    && apt-get install -y /tmp/apache-arrow.deb \
+    && apt-get update \
+    && echo "Available Arrow packages:" && apt-cache policy libarrow-dev | head -20 \
+    && apt-get install -y \
+    libzmq3-dev \
+    libhdf5-dev \
+    libhdf5-serial-dev \
+    hdf5-tools \
+    libidn2-dev \
+    libcurl4-openssl-dev \
+    libssl-dev \
+    libarrow-dev=${ARROW_VERSION} \
+    libparquet-dev=${ARROW_VERSION} \
+    && rm -rf /var/lib/apt/lists/* /tmp/apache-arrow.deb
+
+# Build GNU libiconv from source - required for Arkouda
+# Ubuntu's glibc iconv doesn't export libiconv_open/libiconv/libiconv_close symbols
+RUN cd /tmp && \
+    wget https://ftp.gnu.org/pub/gnu/libiconv/libiconv-${LIBICONV_VERSION}.tar.gz && \
+    tar --no-same-owner -xzf libiconv-${LIBICONV_VERSION}.tar.gz && \
+    cd libiconv-${LIBICONV_VERSION} && \
+    ./configure --prefix=/usr/local --enable-shared --enable-static && \
+    make -j$(nproc) && \
+    make install && \
+    ldconfig && \
+    rm -rf /tmp/libiconv-${LIBICONV_VERSION} /tmp/libiconv-${LIBICONV_VERSION}.tar.gz
+
+ENV LD_LIBRARY_PATH=/usr/local/lib:/opt/slurm-pmi/lib:/opt/mpich/lib:/opt/libfabric/lib:${LD_LIBRARY_PATH}
+ENV LIBRARY_PATH=/usr/local/lib:/opt/slurm-pmi/lib:/opt/mpich/lib:${LIBRARY_PATH}
+ENV CPATH=/usr/local/include:/opt/slurm-pmi/include:/opt/mpich/include:${CPATH}
+ENV LIBFABRIC_DIR=/opt/libfabric
+ENV CHPL_COMM=ofi
+ENV CHPL_COMM_OFI_OOB=pmi2
+ENV CHPL_LIBFABRIC=system
+ENV CHPL_LAUNCHER=slurm-srun
+ENV CHPL_LLVM=system
+ENV CHPL_TARGET_PLATFORM=hpe-cray-ex
+ENV CHPL_HOST_PLATOFMR=linux64
+
+# Build Arkouda for OFI runtime with explicit linker paths and multi-dimensional
+# array support
+RUN cd /opt/arkouda && \
+    export LDFLAGS="-L/opt/slurm-pmi/lib -L/opt/mpich/lib -L/opt/libfabric/lib -Wl,-rpath,/opt/slurm-pmi/lib -Wl,-rpath,/opt/mpich/lib -Wl,-rpath,/opt/libfabric/lib" && \
+    cp .configs/registration-config-multi-dim.json registration-config.json && \
+    ARKOUDA_SKIP_CHECK_DEPS=true make ARRAY_ND_MAX=3 instantiate_max=2048
+
+# ========================================
+# Final Stage: Runtime Container
+# ========================================
+FROM base AS runtime
+
+# Re-declare build argument for this stage
+ARG ARROW_VERSION=19.0.1-1
+
+# Copy all built components
+COPY --from=libfabric-builder /opt/libfabric /opt/libfabric
+COPY --from=pmi2-builder /opt/slurm-pmi /opt/slurm-pmi
+COPY --from=mpich-builder /opt/mpich /opt/mpich
+COPY --from=chapel-builder /opt/chapel /opt/chapel
+COPY --from=arkouda-builder /opt/arkouda /opt/arkouda
+
+# Copy GNU libiconv libraries from arkouda-builder stage
+COPY --from=arkouda-builder /usr/local/lib/libiconv* /usr/local/lib/
+COPY --from=arkouda-builder /usr/local/lib/libcharset* /usr/local/lib/
+
+# Install runtime dependencies and Apache Arrow packages
+RUN apt-get update && apt-get install -y \
+    apt-transport-https \
+    ca-certificates \
+    gnupg \
+    lsb-release \
+    wget \
+    && wget -qO- https://apache.jfrog.io/artifactory/arrow/$(lsb_release --id --short | tr 'A-Z' 'a-z')/apache-arrow-apt-source-latest-$(lsb_release --codename --short).deb -O /tmp/apache-arrow.deb \
+    && apt-get install -y /tmp/apache-arrow.deb \
+    && apt-get update \
+    && apt-get install -y \
+    libzmq5 \
+    libhdf5-103-1 \
+    libnuma1 \
+    libhwloc15 \
+    libidn2-0 \
+    libcurl4 \
+    libssl3t64 \
+    libarrow1900=${ARROW_VERSION} \
+    libparquet1900=${ARROW_VERSION} \
+    python3 \
+    python3-venv \
+    python3-pip \
+    vim \
+    slurm-wlm \
+    slurm-client \
+    munge \
+    && rm -rf /var/lib/apt/lists/* /tmp/apache-arrow.deb
+
+# Copy the Python venv from the builder stage
+COPY --from=arkouda-builder /opt/arkouda-venv /opt/arkouda-venv
+
+# Set up venv environment
+ENV ARKOUDA_VENV=/opt/arkouda-venv
+ENV VIRTUAL_ENV=${ARKOUDA_VENV}
+
+# Set up environment (venv bin comes first for Python tools)
+ENV CHPL_HOME=/opt/chapel
+ENV ARKOUDA_HOME=/opt/arkouda
+ENV PATH=${ARKOUDA_VENV}/bin:${CHPL_HOME}/bin/linux64-x86_64:${CHPL_HOME}/util:/opt/mpich/bin:${ARKOUDA_HOME}:${PATH}
+ENV LD_LIBRARY_PATH=/usr/local/lib:/opt/libfabric/lib:/opt/slurm-pmi/lib:/opt/mpich/lib:${LD_LIBRARY_PATH}
+
+# Set Chapel runtime configuration for distributed execution on HPE Cray EX
+ENV CHPL_COMM=ofi
+ENV CHPL_COMM_OFI_OOB=pmi2
+ENV CHPL_LIBFABRIC=system
+ENV CHPL_TARGET_COMPILER=gnu
+ENV CHPL_LAUNCHER=slurm-srun
+ENV CHPL_LAUNCHER_MEM=none
+ENV CHPL_LLVM=system
+ENV CHPL_TARGET_PLATFORM=hpe-cray-ex
+ENV CHPL_HOST_PLATOFMR=linux64
+ENV LIBFABRIC_DIR=/opt/libfabric
+
+# Create shared test directory mount point and symlinks
+# The actual test directories will be mounted from shared storage at runtime
+RUN mkdir -p /opt/arkouda/shared_tests && \
+    ln -sf /opt/arkouda/shared_tests/.seg_test /opt/arkouda/.seg_test && \
+    ln -sf /opt/arkouda/shared_tests/.par_io_test /opt/arkouda/.par_io_test && \
+    ln -sf /opt/arkouda/shared_tests/.hdf_test /opt/arkouda/.hdf_test && \
+    ln -sf /opt/arkouda/shared_tests/.categorical_test /opt/arkouda/.categorical_test
+
+# Set working directory
+WORKDIR /opt/arkouda
+
+# Default command - start interactive shell
+CMD ["/bin/bash"]
+
+# Add metadata labels
+LABEL description="Chapel and Arkouda with OFI/libfabric for HPE Cray EX systems"
+LABEL version="1.0"
+LABEL chapel.version="${CHAPEL_VERSION}"
+LABEL arkouda.version="${ARKOUDA_VERSION}"
+LABEL chapel.comm="ofi"

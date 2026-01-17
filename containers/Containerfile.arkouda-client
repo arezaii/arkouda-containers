@@ -1,0 +1,70 @@
+# Lightweight Arkouda client container
+# Matches server Python version (3.12) for apply/checkpoint compatibility
+FROM ubuntu:24.04
+
+# Build arguments for version control (re-declare in single-stage build)
+ARG ARROW_VERSION=19.0.1
+ARG ARKOUDA_VERSION=2025.12.16
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install Python 3.12 (Ubuntu 24.04 default) and dependencies
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    python3-venv \
+    git \
+    vim \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create venv for Arkouda client
+ENV CLIENT_VENV=/opt/arkouda-client
+RUN python3 -m venv ${CLIENT_VENV}
+ENV PATH=${CLIENT_VENV}/bin:${PATH}
+
+# Clone Arkouda for client library (matches server version)
+RUN cd /opt && \
+    git clone --depth 1 --branch v${ARKOUDA_VERSION} https://github.com/Bears-R-Us/arkouda.git
+
+# Copy the modified conftest.py file with CLIENT mode fixes
+COPY conftest.patch tmp/
+RUN cd /opt/arkouda && patch -p1 < /tmp/conftest.patch
+
+# Apply patch to fix index_test.py temp directory issue
+COPY arkouda_index_test_temp_fix.patch /tmp/
+RUN cd /opt/arkouda && patch -p1 < /tmp/arkouda_index_test_temp_fix.patch
+
+# Install build dependencies for pyproject.toml support
+RUN ${CLIENT_VENV}/bin/pip install --no-cache-dir \
+    setuptools>=64 \
+    wheel \
+    versioneer[toml]>=0.22
+
+# Install Arkouda client dependencies using pyproject.toml
+# This ensures version compatibility with the server
+RUN cd /opt/arkouda && \
+    ${CLIENT_VENV}/bin/pip install --no-cache-dir \
+    pyarrow==${ARROW_VERSION} \
+    && ${CLIENT_VENV}/bin/pip install --no-cache-dir -e .[dev]
+
+# Create shared test directory mount point and symlinks
+# The actual test directories will be mounted from shared storage at runtime
+RUN mkdir -p /opt/arkouda/shared_tests && \
+    ln -sf /opt/arkouda/shared_tests/.seg_test /opt/arkouda/.seg_test && \
+    ln -sf /opt/arkouda/shared_tests/.par_io_test /opt/arkouda/.par_io_test && \
+    ln -sf /opt/arkouda/shared_tests/.hdf_test /opt/arkouda/.hdf_test && \
+    ln -sf /opt/arkouda/shared_tests/.categorical_test /opt/arkouda/.categorical_test
+
+# Copy the multi-dimensional registration config (should match server config)
+RUN cp /opt/arkouda/.configs/registration-config-multi-dim.json /opt/arkouda/registration-config.json
+
+# Set working directory
+WORKDIR /workspace
+
+# Default to bash
+CMD ["/bin/bash"]
+
+# Labels
+LABEL description="Arkouda Python client"
+LABEL python.version="3.12"
+LABEL arkouda.version="${ARKOUDA_VERSION}"

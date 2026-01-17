@@ -1,0 +1,11 @@
+--- a/tests/pandas/index_test.py
++++ b/tests/pandas/index_test.py
+@@ -22,7 +22,7 @@ from arkouda.testing import assert_index_equal as ak_assert_index_equal
+ 
+ @pytest.fixture
+ def df_test_base_tmp(request):
+-    df_test_base_tmp = "{}/.series_test".format(os.getcwd())
++    df_test_base_tmp = "{}/.series_test".format(pytest.temp_directory)
+     io_util.get_directory(df_test_base_tmp)
+ 
+     # Define a finalizer function for teardown
