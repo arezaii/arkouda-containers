@@ -203,7 +203,7 @@ ENV CHPL_TARGET_COMPILER=gnu
 ENV CHPL_LAUNCHER=slurm-srun
 ENV CHPL_LLVM=system
 ENV CHPL_TARGET_PLATFORM=hpe-cray-ex
-ENV CHPL_HOST_PLATOFMR=linux64
+ENV CHPL_HOST_PLATFORM=linux64
 
 # Create Python venv for Arkouda dependencies
 ENV ARKOUDA_VENV=/opt/arkouda-venv
@@ -277,14 +277,30 @@ ENV CHPL_LIBFABRIC=system
 ENV CHPL_LAUNCHER=slurm-srun
 ENV CHPL_LLVM=system
 ENV CHPL_TARGET_PLATFORM=hpe-cray-ex
-ENV CHPL_HOST_PLATOFMR=linux64
+ENV CHPL_HOST_PLATFORM=linux64
 
 # Build Arkouda for OFI runtime with explicit linker paths and multi-dimensional
 # array support
+# RUN cd /opt/arkouda && \
+#     export LDFLAGS="-L/opt/slurm-pmi/lib -L/opt/mpich/lib -L/opt/libfabric/lib -Wl,-rpath,/opt/slurm-pmi/lib -Wl,-rpath,/opt/mpich/lib -Wl,-rpath,/opt/libfabric/lib" && \
+#     cp .configs/registration-config-multi-dim.json registration-config.json && \
+#     ARKOUDA_SKIP_CHECK_DEPS=true make ARRAY_ND_MAX=3 instantiate_max=2048
+
 RUN cd /opt/arkouda && \
     export LDFLAGS="-L/opt/slurm-pmi/lib -L/opt/mpich/lib -L/opt/libfabric/lib -Wl,-rpath,/opt/slurm-pmi/lib -Wl,-rpath,/opt/mpich/lib -Wl,-rpath,/opt/libfabric/lib" && \
+    echo "=== Environment Check ===" && \
+    which chpl && chpl --version && \
+    echo "CHPL_HOME: $CHPL_HOME" && \
+    echo "CHPL_COMM: $CHPL_COMM" && \
+    echo "CHPL_TARGET_PLATFORM: $CHPL_TARGET_PLATFORM" && \
+    echo "PATH: $PATH" && \
+    echo "LD_LIBRARY_PATH: $LD_LIBRARY_PATH" && \
+    echo "=== Checking Arkouda dependencies ===" && \
+    ls -la .configs/ && \
     cp .configs/registration-config-multi-dim.json registration-config.json && \
-    ARKOUDA_SKIP_CHECK_DEPS=true make ARRAY_ND_MAX=3 instantiate_max=2048
+    cat registration-config.json && \
+    echo "=== Starting Arkouda build ===" && \
+    ARKOUDA_SKIP_CHECK_DEPS=true make ARRAY_ND_MAX=3 instantiate_max=2048 VERBOSE=1
 
 # ========================================
 # Final Stage: Runtime Container
@@ -356,7 +372,7 @@ ENV CHPL_LAUNCHER=slurm-srun
 ENV CHPL_LAUNCHER_MEM=none
 ENV CHPL_LLVM=system
 ENV CHPL_TARGET_PLATFORM=hpe-cray-ex
-ENV CHPL_HOST_PLATOFMR=linux64
+ENV CHPL_HOST_PLATFORM=linux64
 ENV LIBFABRIC_DIR=/opt/libfabric
 
 # Create shared test directory mount point and symlinks
