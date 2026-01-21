@@ -214,6 +214,23 @@ ENV PATH=${ARKOUDA_VENV}/bin:${PATH}
 RUN cd /opt && \
     git clone --depth 1 --branch v${ARKOUDA_VERSION} https://github.com/Bears-R-Us/arkouda.git
 
+# Copy patches directory (may be empty, that's OK)
+COPY patches/ /tmp/patches/
+
+# Apply patches conditionally based on Arkouda version
+RUN if [ "${ARKOUDA_VERSION}" = "2025.09.30" ]; then \
+        echo "Applying versioneer patch for Arkouda ${ARKOUDA_VERSION}" && \
+        cd /opt/arkouda && \
+        if [ -f "/tmp/patches/versioneer_update.patch" ]; then \
+            patch -p1 < /tmp/patches/versioneer_update.patch && \
+            echo "Patch applied successfully"; \
+        else \
+            echo "WARNING: versioneer_update.patch not found"; \
+        fi; \
+    else \
+        echo "No patches needed for Arkouda version ${ARKOUDA_VERSION}"; \
+    fi
+
 # Install build dependencies needed for pyproject.toml parsing
 RUN ${ARKOUDA_VENV}/bin/pip install --no-cache-dir \
     setuptools>=64 \
@@ -281,26 +298,10 @@ ENV CHPL_HOST_PLATFORM=linux64
 
 # Build Arkouda for OFI runtime with explicit linker paths and multi-dimensional
 # array support
-# RUN cd /opt/arkouda && \
-#     export LDFLAGS="-L/opt/slurm-pmi/lib -L/opt/mpich/lib -L/opt/libfabric/lib -Wl,-rpath,/opt/slurm-pmi/lib -Wl,-rpath,/opt/mpich/lib -Wl,-rpath,/opt/libfabric/lib" && \
-#     cp .configs/registration-config-multi-dim.json registration-config.json && \
-#     ARKOUDA_SKIP_CHECK_DEPS=true make ARRAY_ND_MAX=3 instantiate_max=2048
-
 RUN cd /opt/arkouda && \
     export LDFLAGS="-L/opt/slurm-pmi/lib -L/opt/mpich/lib -L/opt/libfabric/lib -Wl,-rpath,/opt/slurm-pmi/lib -Wl,-rpath,/opt/mpich/lib -Wl,-rpath,/opt/libfabric/lib" && \
-    echo "=== Environment Check ===" && \
-    which chpl && chpl --version && \
-    echo "CHPL_HOME: $CHPL_HOME" && \
-    echo "CHPL_COMM: $CHPL_COMM" && \
-    echo "CHPL_TARGET_PLATFORM: $CHPL_TARGET_PLATFORM" && \
-    echo "PATH: $PATH" && \
-    echo "LD_LIBRARY_PATH: $LD_LIBRARY_PATH" && \
-    echo "=== Checking Arkouda dependencies ===" && \
-    ls -la .configs/ && \
     cp .configs/registration-config-multi-dim.json registration-config.json && \
-    cat registration-config.json && \
-    echo "=== Starting Arkouda build ===" && \
-    ARKOUDA_SKIP_CHECK_DEPS=true make ARRAY_ND_MAX=3 instantiate_max=2048 VERBOSE=1
+    CHPL_FLAGS="--instantiate-max=2048" ARKOUDA_SKIP_CHECK_DEPS=true make ARRAY_ND_MAX=3
 
 # ========================================
 # Final Stage: Runtime Container
