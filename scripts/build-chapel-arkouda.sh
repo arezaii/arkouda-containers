@@ -30,9 +30,8 @@ if [ ! -f "$CONTAINERFILE" ]; then
     exit 1
 fi
 
-# Clean previous builds
-podman rmi "$PODMAN_IMAGE" 2>/dev/null || true
-rm -f "$OUTPUT_SIF"
+# Copy patches/ to context
+cp -r $SCRIPT_DIR/../patches .
 
 # Build with Podman
 echo "Building with versions: libfabric=${LIBFABRIC_VERSION}, SLURM=${SLURM_VERSION}, MPICH=${MPICH_VERSION}, libiconv=${LIBICONV_VERSION}, Arrow=${ARROW_VERSION}, Chapel=${CHAPEL_VERSION}, Arkouda=${ARKOUDA_VERSION}"
@@ -54,6 +53,8 @@ if [ $BUILD_EXIT_CODE -ne 0 ]; then
     echo "Podman build failed with exit code: $BUILD_EXIT_CODE"
     exit 1
 fi
+
+rm -rf $SCRIPT_DIR/../containers/patches
 
 # Convert to SIF using shared conversion script
 echo "Converting to SIF format using convert-to-sif.sh..."
