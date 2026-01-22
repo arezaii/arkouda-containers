@@ -14,10 +14,10 @@ echo ""
 add_to_profile() {
     local file_path="$1"
     local description="$2"
-    
+
     if [ -e "$file_path" ]; then
         echo "# $description"
-        echo "e4s-cl profile edit --add-files \"$file_path\""
+        echo "e4s-cl profile edit --add-libraries \"$file_path\""
         return 0
     else
         echo "# $description - NOT FOUND: $file_path"
@@ -29,7 +29,7 @@ add_to_profile() {
 add_dir_to_profile() {
     local dir_path="$1"
     local description="$2"
-    
+
     if [ -d "$dir_path" ]; then
         echo "# $description"
         echo "e4s-cl profile edit --add-files \"$dir_path\""

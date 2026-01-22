@@ -3,6 +3,10 @@
 
 set -e
 
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONVERT_SCRIPT="${SCRIPT_DIR}/convert-to-sif.sh"
+
 # Version configurations (can be overridden with environment variables)
 ARROW_VERSION=${ARROW_VERSION:-19.0.1}
 ARKOUDA_VERSION=${ARKOUDA_VERSION:-2025.12.16}
@@ -11,7 +15,6 @@ ARKOUDA_VERSION=${ARKOUDA_VERSION:-2025.12.16}
 CONTAINER_NAME="arkouda-${ARKOUDA_VERSION}-client"
 CONTAINERFILE="Containerfile.arkouda-client"
 PODMAN_IMAGE="localhost/${CONTAINER_NAME}:latest"
-OCI_ARCHIVE="${CONTAINER_NAME}-oci.tar"
 OUTPUT_SIF="${CONTAINER_NAME}.sif"
 
 
@@ -30,7 +33,7 @@ cp ../patches/arkouda_index_test_temp_fix.patch .
 
 # Clean previous builds
 podman rmi "$PODMAN_IMAGE" 2>/dev/null || true
-rm -f "$OUTPUT_SIF" "$OCI_ARCHIVE"
+rm -f "$OUTPUT_SIF"
 
 # Build with Podman
 echo "Building with Arrow version: ${ARROW_VERSION}, Arkouda version: ${ARKOUDA_VERSION}"
@@ -43,20 +46,13 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# Save to OCI archive
-podman save --format oci-archive -o "$OCI_ARCHIVE" "$PODMAN_IMAGE"
-if [ $? -ne 0 ]; then
-    echo "Podman save failed"
-    exit 1
-fi
+# Convert to SIF using shared conversion script
+echo "Converting to SIF format using convert-to-sif.sh..."
+"$CONVERT_SCRIPT" "$PODMAN_IMAGE" --filename "$CONTAINER_NAME" --output-dir "$(pwd)"
+CONVERT_EXIT_CODE=$?
 
-# Convert to SIF format
-echo "Converting to SIF format..."
-apptainer build "$OUTPUT_SIF" "oci-archive:$OCI_ARCHIVE"
-
-if [ $? -eq 0 ]; then
+if [ $CONVERT_EXIT_CODE -eq 0 ]; then
     echo "Build successful: $OUTPUT_SIF"
-    rm -f "$OCI_ARCHIVE"
 
     # Clean up copied patch files
     rm -f *.patch
@@ -68,6 +64,5 @@ if [ $? -eq 0 ]; then
     echo "Usage: apptainer exec --bind <workspace_path> $OUTPUT_SIF python3 <arkouda_script>"
 else
     echo "SIF conversion failed"
-    rm -f "$OCI_ARCHIVE"
     exit 1
 fi
