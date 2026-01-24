@@ -141,34 +141,6 @@ RUN cd /tmp/slurm-${SLURM_VERSION} && \
 FROM slurm-builder AS pmi2-builder
 
 # ========================================
-# Stage 3: Build MPICH
-# ========================================
-# FROM base AS mpich-builder
-
-# # Re-declare build argument for this stage
-# ARG MPICH_VERSION=4.1.2
-
-# # Copy libfabric and PMI2 from previous stages
-# COPY --from=libfabric-builder /opt/libfabric /opt/libfabric
-# COPY --from=pmi2-builder /opt/slurm-pmi /opt/slurm-pmi
-
-# # Build MPICH with OFI support for HPE Cray EX
-# RUN cd /tmp && \
-#     wget http://www.mpich.org/static/downloads/${MPICH_VERSION}/mpich-${MPICH_VERSION}.tar.gz && \
-#     tar --no-same-owner -xzf mpich-${MPICH_VERSION}.tar.gz && \
-#     cd mpich-${MPICH_VERSION} && \
-#     ./configure --prefix=/opt/mpich \
-#                 --with-device=ch4:ofi \
-#                 --with-libfabric=/opt/libfabric \
-#                 --with-pmi=pmi2 \
-#                 --with-pmi-include=/opt/slurm-pmi/include \
-#                 --with-pmi-lib=/opt/slurm-pmi/lib \
-#                 --enable-shared \
-#                 --enable-fast=all,O3 && \
-#     make -j$(nproc) && \
-#     make install
-
-# ========================================
 # Stage 4: Build Chapel with OFI communication
 # ========================================
 FROM base AS chapel-builder
@@ -179,7 +151,6 @@ ARG CHAPEL_VERSION=2.6.0
 # Copy dependencies from previous stages
 COPY --from=libfabric-builder /opt/libfabric /opt/libfabric
 COPY --from=pmi2-builder /opt/slurm-pmi /opt/slurm-pmi
-# COPY --from=mpich-builder /opt/mpich /opt/mpich
 
 # Update library paths
 ENV LD_LIBRARY_PATH=/opt/libfabric/lib:/opt/slurm-pmi/lib:${LD_LIBRARY_PATH}
@@ -222,7 +193,6 @@ ARG ARKOUDA_VERSION=2025.12.16
 # Copy all dependencies
 COPY --from=libfabric-builder /opt/libfabric /opt/libfabric
 COPY --from=pmi2-builder /opt/slurm-pmi /opt/slurm-pmi
-# COPY --from=mpich-builder /opt/mpich /opt/mpich
 COPY --from=chapel-builder /opt/chapel /opt/chapel
 
 # Set up environment
@@ -363,6 +333,8 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     libzmq5 \
     libhdf5-103-1 \
+    libhdf5-hl-100t64 \
+    libatomic1 \
     libnuma1 \
     libhwloc15 \
     libidn2-0 \
@@ -387,12 +359,17 @@ COPY --from=slurm-builder /usr/bin/s* /usr/bin/
 COPY --from=slurm-builder /usr/sbin/slur* /usr/sbin/
 COPY --from=slurm-builder /usr/lib/libslurm* /usr/lib/
 COPY --from=slurm-builder /usr/lib/slurm /usr/lib/slurm
+COPY --from=slurm-builder /usr/lib/x86_64-linux-gnu/libpmi2.so /usr/lib/x86_64-linux-gnu/libpmi2.so.0 /usr/lib/x86_64-linux-gnu/libpmi2.so.0.0.0 /usr/lib/x86_64-linux-gnu/
+COPY --from=slurm-builder /usr/include/slurm /usr/include/slurm
+COPY --from=slurm-builder /usr/include/pmi2.h /usr/include/pmi2.h
 COPY --from=slurm-builder /etc/slurm /etc/slurm-base
 COPY --from=libfabric-builder /opt/libfabric /opt/libfabric
 COPY --from=pmi2-builder /opt/slurm-pmi /opt/slurm-pmi
-# COPY --from=mpich-builder /opt/mpich /opt/mpich
 COPY --from=chapel-builder /opt/chapel /opt/chapel
 COPY --from=arkouda-builder /opt/arkouda /opt/arkouda
+
+# Update library cache for Slurm and PMI2 libraries
+RUN ldconfig
 
 # Copy GNU libiconv libraries from arkouda-builder stage
 COPY --from=arkouda-builder /usr/local/lib/libiconv* /usr/local/lib/
@@ -418,7 +395,8 @@ RUN dd if=/dev/urandom bs=1 count=1024 > /etc/munge/munge.key && \
 
 # Copy SLURM startup script controlled by environment variable
 COPY scripts/start-slurm.sh /opt/start-slurm.sh
-RUN chmod +x /opt/start-slurm.sh
+COPY scripts/slurm-start.sh /usr/local/bin/slurm-start
+RUN chmod +x /opt/start-slurm.sh /usr/local/bin/slurm-start
 
 # Set up venv environment
 ENV ARKOUDA_VENV=/opt/arkouda-venv
@@ -449,6 +427,13 @@ RUN mkdir -p /opt/arkouda/shared_tests && \
     ln -sf /opt/arkouda/shared_tests/.par_io_test /opt/arkouda/.par_io_test && \
     ln -sf /opt/arkouda/shared_tests/.hdf_test /opt/arkouda/.hdf_test && \
     ln -sf /opt/arkouda/shared_tests/.categorical_test /opt/arkouda/.categorical_test
+
+# Set up environment for interactive use
+RUN echo '# Slurm environment setup' >> /etc/bash.bashrc && \
+    echo 'export PATH=/usr/sbin:/usr/bin:${PATH}' >> /etc/bash.bashrc && \
+    echo 'export SLURM_CONF=/etc/slurm/slurm.conf' >> /etc/bash.bashrc && \
+    echo '# To start Slurm services in container mode, run:' >> /etc/bash.bashrc && \
+    echo '# export SLURM_CONTAINER_MODE=true && source /opt/start-slurm.sh' >> /etc/bash.bashrc
 
 # Set working directory
 WORKDIR /opt/arkouda
