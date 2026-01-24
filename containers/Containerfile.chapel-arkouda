@@ -7,7 +7,7 @@ FROM ubuntu:24.04 AS base
 
 # Build arguments for version control
 ARG LIBFABRIC_VERSION=1.19.0
-ARG SLURM_VERSION=23.02.7
+ARG SLURM_VERSION=25.05.3
 ARG MPICH_VERSION=4.1.2
 ARG LIBICONV_VERSION=1.17
 ARG ARROW_VERSION=19.0.1-1
@@ -83,53 +83,90 @@ RUN cd /tmp && \
     make install
 
 # ========================================
-# Stage 2: Build PMI2 libraries from SLURM
+# Stage 2: Build SLURM 25.05+ from source (includes PMI2 and full daemons)
 # ========================================
-FROM base AS pmi2-builder
+FROM base AS slurm-builder
 
 # Re-declare build argument for this stage
-ARG SLURM_VERSION=23.02.7
+ARG SLURM_VERSION=25.05.3
 
-# Build SLURM's PMI2 library (standalone, no host dependencies)
+# Install additional build dependencies for SLURM
+# libdbus-1-dev is CRITICAL for cgroup v2 plugin support
+RUN apt-get update && apt-get install -y \
+    libcgroup-dev \
+    libdbus-1-dev \
+    libudev-dev \
+    libhttp-parser-dev \
+    default-libmysqlclient-dev \
+    libpam-dev \
+    libreadline-dev \
+    && which mysql_config \
+    && rm -rf /var/lib/apt/lists/*
+
+# Build full SLURM from source with PMI2 support
 RUN cd /tmp && \
     wget https://download.schedmd.com/slurm/slurm-${SLURM_VERSION}.tar.bz2 && \
     tar --no-same-owner -xjf slurm-${SLURM_VERSION}.tar.bz2 && \
     cd slurm-${SLURM_VERSION} && \
-    ./configure --prefix=/opt/slurm-pmi \
+    ./configure --prefix=/usr \
+                --sysconfdir=/etc/slurm \
+                --localstatedir=/var \
                 --with-pmix=no \
                 --with-ucx=no \
+                --without-mysql_config \
                 --disable-dependency-tracking && \
+    make -j$(nproc) && \
+    make install && \
+    # Build and install PMI2 library
     cd contribs/pmi2 && \
     make -j$(nproc) && \
-    make install
+    cp .libs/libpmi2.so* /usr/lib/x86_64-linux-gnu/ 2>/dev/null || true && \
+    cp pmi2.h /usr/include/ && \
+    mkdir -p /opt/slurm-pmi/lib && \
+    mkdir -p /opt/slurm-pmi/include && \
+    cp .libs/libpmi2.so* /opt/slurm-pmi/lib/ 2>/dev/null || true && \
+    cp pmi2.h /opt/slurm-pmi/include/
+
+# Also build PMI2 library separately for runtime compatibility
+RUN cd /tmp/slurm-${SLURM_VERSION} && \
+    mkdir -p /opt/slurm-pmi/lib && \
+    mkdir -p /opt/slurm-pmi/include && \
+    cp contribs/pmi2/pmi2.h /opt/slurm-pmi/include/ && \
+    cd contribs/pmi2 && \
+    cp .libs/libpmi2.so.0* /opt/slurm-pmi/lib/ 2>/dev/null || true
+
+# ========================================
+# Stage 3: Alias for backwards compatibility with pmi2-builder references
+# ========================================
+FROM slurm-builder AS pmi2-builder
 
 # ========================================
 # Stage 3: Build MPICH
 # ========================================
-FROM base AS mpich-builder
+# FROM base AS mpich-builder
 
-# Re-declare build argument for this stage
-ARG MPICH_VERSION=4.1.2
+# # Re-declare build argument for this stage
+# ARG MPICH_VERSION=4.1.2
 
-# Copy libfabric and PMI2 from previous stages
-COPY --from=libfabric-builder /opt/libfabric /opt/libfabric
-COPY --from=pmi2-builder /opt/slurm-pmi /opt/slurm-pmi
+# # Copy libfabric and PMI2 from previous stages
+# COPY --from=libfabric-builder /opt/libfabric /opt/libfabric
+# COPY --from=pmi2-builder /opt/slurm-pmi /opt/slurm-pmi
 
-# Build MPICH with OFI support for HPE Cray EX
-RUN cd /tmp && \
-    wget http://www.mpich.org/static/downloads/${MPICH_VERSION}/mpich-${MPICH_VERSION}.tar.gz && \
-    tar --no-same-owner -xzf mpich-${MPICH_VERSION}.tar.gz && \
-    cd mpich-${MPICH_VERSION} && \
-    ./configure --prefix=/opt/mpich \
-                --with-device=ch4:ofi \
-                --with-libfabric=/opt/libfabric \
-                --with-pmi=pmi2 \
-                --with-pmi-include=/opt/slurm-pmi/include \
-                --with-pmi-lib=/opt/slurm-pmi/lib \
-                --enable-shared \
-                --enable-fast=all,O3 && \
-    make -j$(nproc) && \
-    make install
+# # Build MPICH with OFI support for HPE Cray EX
+# RUN cd /tmp && \
+#     wget http://www.mpich.org/static/downloads/${MPICH_VERSION}/mpich-${MPICH_VERSION}.tar.gz && \
+#     tar --no-same-owner -xzf mpich-${MPICH_VERSION}.tar.gz && \
+#     cd mpich-${MPICH_VERSION} && \
+#     ./configure --prefix=/opt/mpich \
+#                 --with-device=ch4:ofi \
+#                 --with-libfabric=/opt/libfabric \
+#                 --with-pmi=pmi2 \
+#                 --with-pmi-include=/opt/slurm-pmi/include \
+#                 --with-pmi-lib=/opt/slurm-pmi/lib \
+#                 --enable-shared \
+#                 --enable-fast=all,O3 && \
+#     make -j$(nproc) && \
+#     make install
 
 # ========================================
 # Stage 4: Build Chapel with OFI communication
@@ -142,13 +179,13 @@ ARG CHAPEL_VERSION=2.6.0
 # Copy dependencies from previous stages
 COPY --from=libfabric-builder /opt/libfabric /opt/libfabric
 COPY --from=pmi2-builder /opt/slurm-pmi /opt/slurm-pmi
-COPY --from=mpich-builder /opt/mpich /opt/mpich
+# COPY --from=mpich-builder /opt/mpich /opt/mpich
 
 # Update library paths
-ENV LD_LIBRARY_PATH=/opt/libfabric/lib:/opt/slurm-pmi/lib:/opt/mpich/lib:${LD_LIBRARY_PATH}
-ENV PKG_CONFIG_PATH=/opt/libfabric/lib/pkgconfig:/opt/mpich/lib/pkgconfig:${PKG_CONFIG_PATH}
-ENV LIBRARY_PATH=/opt/slurm-pmi/lib:/opt/mpich/lib:/opt/libfabric/lib:${LIBRARY_PATH}
-ENV CPATH=/opt/slurm-pmi/include:/opt/mpich/include:${CPATH}
+ENV LD_LIBRARY_PATH=/opt/libfabric/lib:/opt/slurm-pmi/lib:${LD_LIBRARY_PATH}
+ENV PKG_CONFIG_PATH=/opt/libfabric/lib/pkgconfig:${PKG_CONFIG_PATH}
+ENV LIBRARY_PATH=/opt/slurm-pmi/lib:/opt/libfabric/lib:${LIBRARY_PATH}
+ENV CPATH=/opt/slurm-pmi/include:${CPATH}
 
 # Download Chapel source
 RUN cd /opt && \
@@ -185,15 +222,15 @@ ARG ARKOUDA_VERSION=2025.12.16
 # Copy all dependencies
 COPY --from=libfabric-builder /opt/libfabric /opt/libfabric
 COPY --from=pmi2-builder /opt/slurm-pmi /opt/slurm-pmi
-COPY --from=mpich-builder /opt/mpich /opt/mpich
+# COPY --from=mpich-builder /opt/mpich /opt/mpich
 COPY --from=chapel-builder /opt/chapel /opt/chapel
 
 # Set up environment
 ENV CHPL_HOME=/opt/chapel
-ENV PATH=${CHPL_HOME}/bin/linux64-x86_64:${CHPL_HOME}/util:/opt/mpich/bin:${PATH}
-ENV LD_LIBRARY_PATH=/opt/libfabric/lib:/opt/slurm-pmi/lib:/opt/mpich/lib:${LD_LIBRARY_PATH}
-ENV LIBRARY_PATH=/opt/slurm-pmi/lib:/opt/mpich/lib:/opt/libfabric/lib:${LIBRARY_PATH}
-ENV CPATH=/opt/slurm-pmi/include:/opt/mpich/include:${CPATH}
+ENV PATH=${CHPL_HOME}/bin/linux64-x86_64:${CHPL_HOME}/util:${PATH}
+ENV LD_LIBRARY_PATH=/opt/libfabric/lib:/opt/slurm-pmi/lib:${LD_LIBRARY_PATH}
+ENV LIBRARY_PATH=/opt/slurm-pmi/lib:/opt/libfabric/lib:${LIBRARY_PATH}
+ENV CPATH=/opt/slurm-pmi/include:${CPATH}
 
 # Set Chapel configuration (must match build environment)
 ENV CHPL_COMM=ofi
@@ -284,9 +321,9 @@ RUN cd /tmp && \
     ldconfig && \
     rm -rf /tmp/libiconv-${LIBICONV_VERSION} /tmp/libiconv-${LIBICONV_VERSION}.tar.gz
 
-ENV LD_LIBRARY_PATH=/usr/local/lib:/opt/slurm-pmi/lib:/opt/mpich/lib:/opt/libfabric/lib:${LD_LIBRARY_PATH}
-ENV LIBRARY_PATH=/usr/local/lib:/opt/slurm-pmi/lib:/opt/mpich/lib:${LIBRARY_PATH}
-ENV CPATH=/usr/local/include:/opt/slurm-pmi/include:/opt/mpich/include:${CPATH}
+ENV LD_LIBRARY_PATH=/usr/local/lib:/opt/slurm-pmi/lib:/opt/libfabric/lib:${LD_LIBRARY_PATH}
+ENV LIBRARY_PATH=/usr/local/lib:/opt/slurm-pmi/lib:${LIBRARY_PATH}
+ENV CPATH=/usr/local/include:/opt/slurm-pmi/include:${CPATH}
 ENV LIBFABRIC_DIR=/opt/libfabric
 ENV CHPL_COMM=ofi
 ENV CHPL_COMM_OFI_OOB=pmi2
@@ -299,40 +336,31 @@ ENV CHPL_HOST_PLATFORM=linux64
 # Build Arkouda for OFI runtime with explicit linker paths and multi-dimensional
 # array support
 RUN cd /opt/arkouda && \
-    export LDFLAGS="-L/opt/slurm-pmi/lib -L/opt/mpich/lib -L/opt/libfabric/lib -Wl,-rpath,/opt/slurm-pmi/lib -Wl,-rpath,/opt/mpich/lib -Wl,-rpath,/opt/libfabric/lib" && \
+    export LDFLAGS="-L/opt/slurm-pmi/lib -L/opt/libfabric/lib -Wl,-rpath,/opt/slurm-pmi/lib -Wl,-rpath,/opt/libfabric/lib" && \
     cp .configs/registration-config-multi-dim.json registration-config.json && \
     CHPL_FLAGS="--instantiate-max=2048" ARKOUDA_SKIP_CHECK_DEPS=true make ARRAY_ND_MAX=3
 
 # ========================================
 # Final Stage: Runtime Container
+# Fresh Ubuntu base to avoid inheriting old SLURM packages
 # ========================================
-FROM base AS runtime
+FROM ubuntu:24.04 AS runtime
 
 # Re-declare build argument for this stage
 ARG ARROW_VERSION=19.0.1-1
 
-# Copy all built components
-COPY --from=libfabric-builder /opt/libfabric /opt/libfabric
-COPY --from=pmi2-builder /opt/slurm-pmi /opt/slurm-pmi
-COPY --from=mpich-builder /opt/mpich /opt/mpich
-COPY --from=chapel-builder /opt/chapel /opt/chapel
-COPY --from=arkouda-builder /opt/arkouda /opt/arkouda
-
-# Copy GNU libiconv libraries from arkouda-builder stage
-COPY --from=arkouda-builder /usr/local/lib/libiconv* /usr/local/lib/
-COPY --from=arkouda-builder /usr/local/lib/libcharset* /usr/local/lib/
-
-# Install runtime dependencies and Apache Arrow packages
+# Install runtime dependencies - NOT old SLURM packages
+# Includes minimal Chapel runtime libs (libclang, LLVM) and system libs
 RUN apt-get update && apt-get install -y \
+    --no-install-recommends \
     apt-transport-https \
     ca-certificates \
     gnupg \
     lsb-release \
     wget \
-    && wget -qO- https://apache.jfrog.io/artifactory/arrow/$(lsb_release --id --short | tr 'A-Z' 'a-z')/apache-arrow-apt-source-latest-$(lsb_release --codename --short).deb -O /tmp/apache-arrow.deb \
-    && apt-get install -y /tmp/apache-arrow.deb \
-    && apt-get update \
-    && apt-get install -y \
+    python3 \
+    python3-venv \
+    python3-pip \
     libzmq5 \
     libhdf5-103-1 \
     libnuma1 \
@@ -340,19 +368,57 @@ RUN apt-get update && apt-get install -y \
     libidn2-0 \
     libcurl4 \
     libssl3t64 \
+    vim \
+    munge \
+    libclang-cpp18 \
+    libclang1 \
+    llvm-18-runtime \
+    && wget -qO- https://apache.jfrog.io/artifactory/arrow/$(lsb_release --id --short | tr 'A-Z' 'a-z')/apache-arrow-apt-source-latest-$(lsb_release --codename --short).deb -O /tmp/apache-arrow.deb \
+    && apt-get install -y /tmp/apache-arrow.deb \
+    && apt-get update \
+    && apt-get install -y \
+    --no-install-recommends \
     libarrow1900=${ARROW_VERSION} \
     libparquet1900=${ARROW_VERSION} \
-    python3 \
-    python3-venv \
-    python3-pip \
-    vim \
-    slurm-wlm \
-    slurm-client \
-    munge \
     && rm -rf /var/lib/apt/lists/* /tmp/apache-arrow.deb
+
+# Copy all built components from builder stages
+COPY --from=slurm-builder /usr/bin/s* /usr/bin/
+COPY --from=slurm-builder /usr/sbin/slur* /usr/sbin/
+COPY --from=slurm-builder /usr/lib/libslurm* /usr/lib/
+COPY --from=slurm-builder /usr/lib/slurm /usr/lib/slurm
+COPY --from=slurm-builder /etc/slurm /etc/slurm-base
+COPY --from=libfabric-builder /opt/libfabric /opt/libfabric
+COPY --from=pmi2-builder /opt/slurm-pmi /opt/slurm-pmi
+# COPY --from=mpich-builder /opt/mpich /opt/mpich
+COPY --from=chapel-builder /opt/chapel /opt/chapel
+COPY --from=arkouda-builder /opt/arkouda /opt/arkouda
+
+# Copy GNU libiconv libraries from arkouda-builder stage
+COPY --from=arkouda-builder /usr/local/lib/libiconv* /usr/local/lib/
+COPY --from=arkouda-builder /usr/local/lib/libcharset* /usr/local/lib/
 
 # Copy the Python venv from the builder stage
 COPY --from=arkouda-builder /opt/arkouda-venv /opt/arkouda-venv
+
+
+# Set up minimal SLURM configuration for standalone operation
+# This allows the container to work on systems without host SLURM
+RUN mkdir -p /etc/slurm /var/log/slurm /var/spool/slurm /run/slurm && \
+    chmod 755 /var/log/slurm /var/spool/slurm /run/slurm
+
+# Copy SLURM configuration for single-node operation
+COPY configs/slurm.conf /etc/slurm/slurm.conf
+COPY configs/cgroup.conf /etc/slurm/cgroup.conf
+
+# Create MUNGE key for authentication
+RUN dd if=/dev/urandom bs=1 count=1024 > /etc/munge/munge.key && \
+    chown munge:munge /etc/munge/munge.key && \
+    chmod 400 /etc/munge/munge.key
+
+# Copy SLURM startup script controlled by environment variable
+COPY scripts/start-slurm.sh /opt/start-slurm.sh
+RUN chmod +x /opt/start-slurm.sh
 
 # Set up venv environment
 ENV ARKOUDA_VENV=/opt/arkouda-venv
@@ -361,8 +427,8 @@ ENV VIRTUAL_ENV=${ARKOUDA_VENV}
 # Set up environment (venv bin comes first for Python tools)
 ENV CHPL_HOME=/opt/chapel
 ENV ARKOUDA_HOME=/opt/arkouda
-ENV PATH=${ARKOUDA_VENV}/bin:${CHPL_HOME}/bin/linux64-x86_64:${CHPL_HOME}/util:/opt/mpich/bin:${ARKOUDA_HOME}:${PATH}
-ENV LD_LIBRARY_PATH=/usr/local/lib:/opt/libfabric/lib:/opt/slurm-pmi/lib:/opt/mpich/lib:${LD_LIBRARY_PATH}
+ENV PATH=${ARKOUDA_VENV}/bin:${CHPL_HOME}/bin/linux64-x86_64:${CHPL_HOME}/util:${ARKOUDA_HOME}:${PATH}
+ENV LD_LIBRARY_PATH=/usr/local/lib:/opt/libfabric/lib:/opt/slurm-pmi/lib:${LD_LIBRARY_PATH}
 
 # Set Chapel runtime configuration for distributed execution on HPE Cray EX
 ENV CHPL_COMM=ofi
