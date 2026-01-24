@@ -36,7 +36,7 @@ cp -r $SCRIPT_DIR/../patches .
 # Build with Podman
 echo "Building with versions: libfabric=${LIBFABRIC_VERSION}, SLURM=${SLURM_VERSION}, MPICH=${MPICH_VERSION}, libiconv=${LIBICONV_VERSION}, Arrow=${ARROW_VERSION}, Chapel=${CHAPEL_VERSION}, Arkouda=${ARKOUDA_VERSION}"
 
-podman build -t "$PODMAN_IMAGE" -f "$CONTAINERFILE" \
+docker build --progress plain -t "$PODMAN_IMAGE" -f "$CONTAINERFILE" \
     --build-arg NCPUS=$(nproc) \
     --build-arg LIBFABRIC_VERSION="$LIBFABRIC_VERSION" \
     --build-arg SLURM_VERSION="$SLURM_VERSION" \

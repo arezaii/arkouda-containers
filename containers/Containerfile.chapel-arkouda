@@ -394,9 +394,9 @@ RUN dd if=/dev/urandom bs=1 count=1024 > /etc/munge/munge.key && \
     chmod 400 /etc/munge/munge.key
 
 # Copy SLURM startup script controlled by environment variable
-COPY scripts/start-slurm.sh /opt/start-slurm.sh
+COPY scripts/startup-slurm-for-container.sh /opt/startup-slurm-for-container.sh
 COPY scripts/slurm-start.sh /usr/local/bin/slurm-start
-RUN chmod +x /opt/start-slurm.sh /usr/local/bin/slurm-start
+RUN chmod +x /opt/startup-slurm-for-container.sh /usr/local/bin/slurm-start
 
 # Set up venv environment
 ENV ARKOUDA_VENV=/opt/arkouda-venv
@@ -433,7 +433,7 @@ RUN echo '# Slurm environment setup' >> /etc/bash.bashrc && \
     echo 'export PATH=/usr/sbin:/usr/bin:${PATH}' >> /etc/bash.bashrc && \
     echo 'export SLURM_CONF=/etc/slurm/slurm.conf' >> /etc/bash.bashrc && \
     echo '# To start Slurm services in container mode, run:' >> /etc/bash.bashrc && \
-    echo '# export SLURM_CONTAINER_MODE=true && source /opt/start-slurm.sh' >> /etc/bash.bashrc
+    echo '# export SLURM_CONTAINER_MODE=true && source /opt/startup-slurm-for-container.sh' >> /etc/bash.bashrc
 
 # Set working directory
 WORKDIR /opt/arkouda
