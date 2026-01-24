@@ -13,7 +13,7 @@ if [ "${SLURM_CONTAINER_MODE}" = "true" ]; then
     chmod 755 /var/spool/slurm /var/spool/slurm/ctld /var/spool/slurm/d /var/run/slurm /var/log/slurm
     chown -R root:root /var/spool/slurm /var/run/slurm /var/log/slurm
 
-    # Create empty state files  
+    # Create empty state files
     touch /var/spool/slurm/ctld/{node,job,resv,trigger}_state
     chmod 644 /var/spool/slurm/ctld/*_state
 
@@ -30,6 +30,23 @@ if [ "${SLURM_CONTAINER_MODE}" = "true" ]; then
     # Clean up old processes
     pkill -9 slurmctld slurmd 2>/dev/null || true
     sleep 1
+
+    # Auto-detect or use environment variables for CPU topology
+    DETECTED_CPUS=$(nproc 2>/dev/null || echo "16")
+    DETECTED_SOCKETS=$(lscpu -p=Socket 2>/dev/null | grep -v '^#' | sort -u | wc -l || echo "1")
+    DETECTED_CORES=$(lscpu -p=Core 2>/dev/null | grep -v '^#' | sort -u | wc -l || echo "8")
+    DETECTED_THREADS=$((DETECTED_CPUS / DETECTED_CORES))
+
+    # Allow override via environment variables
+    SLURM_CPUS=${SLURM_CPUS:-$DETECTED_CPUS}
+    SLURM_SOCKETS=${SLURM_SOCKETS:-$DETECTED_SOCKETS}
+    SLURM_CORES_PER_SOCKET=${SLURM_CORES_PER_SOCKET:-$DETECTED_CORES}
+    SLURM_THREADS_PER_CORE=${SLURM_THREADS_PER_CORE:-$DETECTED_THREADS}
+
+    echo "Configuring SLURM with: CPUs=${SLURM_CPUS} Sockets=${SLURM_SOCKETS} CoresPerSocket=${SLURM_CORES_PER_SOCKET} ThreadsPerCore=${SLURM_THREADS_PER_CORE}"
+
+    # Update slurm.conf with actual CPU topology
+    sed -i "s/^NodeName=localhost.*/NodeName=localhost CPUs=${SLURM_CPUS} Sockets=${SLURM_SOCKETS} CoresPerSocket=${SLURM_CORES_PER_SOCKET} ThreadsPerCore=${SLURM_THREADS_PER_CORE}/" /etc/slurm/slurm.conf
 
     # Start SLURM services
     export SLURM_CONF=/etc/slurm/slurm.conf
@@ -52,7 +69,7 @@ if [ "${SLURM_CONTAINER_MODE}" = "true" ]; then
     # Force node to idle state multiple ways to ensure it works
     scontrol update NodeName=localhost State=IDLE 2>/dev/null || true
     sleep 1
-    
+
     # If that didn't work, try adding the node
     NODE_COUNT=$(sinfo -h 2>/dev/null | wc -l)
     if [ "$NODE_COUNT" -lt 1 ]; then
