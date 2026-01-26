@@ -32,7 +32,7 @@ fi
 # Copy patches/ to context
 cp -r $SCRIPT_DIR/../patches .
 cp -r $SCRIPT_DIR/../configs .
-mkdir ./scripts/
+mkdir -p ./scripts/
 cp $SCRIPT_DIR/../scripts/startup-slurm-for-container.sh ./scripts/.
 cp $SCRIPT_DIR/../scripts/slurm-start.sh ./scripts/.
 
