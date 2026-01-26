@@ -30,7 +30,11 @@ e4s-cl profile edit --backend apptainer
 ```bash
 # Run arkouda server (distributed)
 e4s-cl launch srun --job-name=arkouda_server --nodes=2 --ntasks=2 --cpus-per-task=256 --exclusive --time=8:00:00 --kill-on-bad-exit -- arkouda_server_real -nl 2
+
+# Run arkouda client
+apptainer shell /path/to/arkouda-client.sif
 ```
+
 
 ## File Structure
 ```

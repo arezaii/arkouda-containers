@@ -1,7 +1,6 @@
 # Multi-stage Containerfile for Chapel and Arkouda with OFI + libfabric support
-# Optimized for distributed execution on HPE Cray EX systems
-# Chapel CHPL_COMM=ofi uses libfabric directly (not GASNet)
-# Using Ubuntu 24.04 (Noble) for GLIBC 2.39 compatibility with host SLURM
+# Specialized for distributed execution on HPE Cray EX systems
+# Chapel CHPL_COMM=ofi uses libfabric directly
 
 FROM ubuntu:24.04 AS base
 
