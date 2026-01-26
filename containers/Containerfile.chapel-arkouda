@@ -8,7 +8,6 @@ FROM ubuntu:24.04 AS base
 # Build arguments for version control
 ARG LIBFABRIC_VERSION=1.19.0
 ARG SLURM_VERSION=25.05.3
-ARG MPICH_VERSION=4.1.2
 ARG LIBICONV_VERSION=1.17
 ARG ARROW_VERSION=19.0.1-1
 ARG CHAPEL_VERSION=2.6.0
@@ -127,21 +126,8 @@ RUN cd /tmp && \
     cp .libs/libpmi2.so* /opt/slurm-pmi/lib/ 2>/dev/null || true && \
     cp pmi2.h /opt/slurm-pmi/include/
 
-# Also build PMI2 library separately for runtime compatibility
-RUN cd /tmp/slurm-${SLURM_VERSION} && \
-    mkdir -p /opt/slurm-pmi/lib && \
-    mkdir -p /opt/slurm-pmi/include && \
-    cp contribs/pmi2/pmi2.h /opt/slurm-pmi/include/ && \
-    cd contribs/pmi2 && \
-    cp .libs/libpmi2.so.0* /opt/slurm-pmi/lib/ 2>/dev/null || true
-
 # ========================================
-# Stage 3: Alias for backwards compatibility with pmi2-builder references
-# ========================================
-FROM slurm-builder AS pmi2-builder
-
-# ========================================
-# Stage 4: Build Chapel with OFI communication
+# Stage 3: Build Chapel with OFI communication
 # ========================================
 FROM base AS chapel-builder
 
@@ -150,7 +136,7 @@ ARG CHAPEL_VERSION=2.6.0
 
 # Copy dependencies from previous stages
 COPY --from=libfabric-builder /opt/libfabric /opt/libfabric
-COPY --from=pmi2-builder /opt/slurm-pmi /opt/slurm-pmi
+COPY --from=slurm-builder /opt/slurm-pmi /opt/slurm-pmi
 
 # Update library paths
 ENV LD_LIBRARY_PATH=/opt/libfabric/lib:/opt/slurm-pmi/lib:${LD_LIBRARY_PATH}
@@ -163,7 +149,7 @@ RUN cd /opt && \
     git clone --depth 1 --branch ${CHAPEL_VERSION} https://github.com/chapel-lang/chapel.git
 
 # Build Chapel with OFI communication layer for HPE Cray EX
-# use PMI2 from MPICH for build, host PMI2 libs bound at runtime
+# host PMI2 libs bound at runtime
 ENV CHPL_COMM=ofi
 ENV CHPL_COMM_OFI_OOB=pmi2
 ENV CHPL_LIBFABRIC=system
@@ -181,7 +167,7 @@ RUN cd /opt/chapel && \
     make chapel-py-venv
 
 # ========================================
-# Stage 5: Build Arkouda
+# Stage 4: Build Arkouda
 # ========================================
 FROM base AS arkouda-builder
 
@@ -192,7 +178,7 @@ ARG ARKOUDA_VERSION=2025.12.16
 
 # Copy all dependencies
 COPY --from=libfabric-builder /opt/libfabric /opt/libfabric
-COPY --from=pmi2-builder /opt/slurm-pmi /opt/slurm-pmi
+COPY --from=slurm-builder /opt/slurm-pmi /opt/slurm-pmi
 COPY --from=chapel-builder /opt/chapel /opt/chapel
 
 # Set up environment
@@ -295,13 +281,6 @@ ENV LD_LIBRARY_PATH=/usr/local/lib:/opt/slurm-pmi/lib:/opt/libfabric/lib:${LD_LI
 ENV LIBRARY_PATH=/usr/local/lib:/opt/slurm-pmi/lib:${LIBRARY_PATH}
 ENV CPATH=/usr/local/include:/opt/slurm-pmi/include:${CPATH}
 ENV LIBFABRIC_DIR=/opt/libfabric
-ENV CHPL_COMM=ofi
-ENV CHPL_COMM_OFI_OOB=pmi2
-ENV CHPL_LIBFABRIC=system
-ENV CHPL_LAUNCHER=slurm-srun
-ENV CHPL_LLVM=system
-ENV CHPL_TARGET_PLATFORM=hpe-cray-ex
-ENV CHPL_HOST_PLATFORM=linux64
 
 # Build Arkouda for OFI runtime with explicit linker paths and multi-dimensional
 # array support
@@ -364,12 +343,9 @@ COPY --from=slurm-builder /usr/include/slurm /usr/include/slurm
 COPY --from=slurm-builder /usr/include/pmi2.h /usr/include/pmi2.h
 COPY --from=slurm-builder /etc/slurm /etc/slurm-base
 COPY --from=libfabric-builder /opt/libfabric /opt/libfabric
-COPY --from=pmi2-builder /opt/slurm-pmi /opt/slurm-pmi
+COPY --from=slurm-builder /opt/slurm-pmi /opt/slurm-pmi
 COPY --from=chapel-builder /opt/chapel /opt/chapel
 COPY --from=arkouda-builder /opt/arkouda /opt/arkouda
-
-# Update library cache for Slurm and PMI2 libraries
-RUN ldconfig
 
 # Copy GNU libiconv libraries from arkouda-builder stage
 COPY --from=arkouda-builder /usr/local/lib/libiconv* /usr/local/lib/
@@ -377,6 +353,9 @@ COPY --from=arkouda-builder /usr/local/lib/libcharset* /usr/local/lib/
 
 # Copy the Python venv from the builder stage
 COPY --from=arkouda-builder /opt/arkouda-venv /opt/arkouda-venv
+
+# Update library cache after copying all libraries (Slurm, PMI2, libiconv)
+RUN ldconfig
 
 
 # Set up minimal SLURM configuration for standalone operation

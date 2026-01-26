@@ -9,8 +9,7 @@ CONVERT_SCRIPT="${SCRIPT_DIR}/convert-to-sif.sh"
 
 # Version configurations (can be overridden with environment variables)
 LIBFABRIC_VERSION=${LIBFABRIC_VERSION:-1.19.0}
-SLURM_VERSION=${SLURM_VERSION:-23.02.7}
-MPICH_VERSION=${MPICH_VERSION:-4.1.2}
+SLURM_VERSION=${SLURM_VERSION:-25.05.3}
 LIBICONV_VERSION=${LIBICONV_VERSION:-1.17}
 ARROW_VERSION=${ARROW_VERSION:-19.0.1-1}
 CHAPEL_VERSION=${CHAPEL_VERSION:-2.6.0}
@@ -32,20 +31,23 @@ fi
 
 # Copy patches/ to context
 cp -r $SCRIPT_DIR/../patches .
+cp -r $SCRIPT_DIR/../configs .
+mkdir ./scripts/
+cp $SCRIPT_DIR/../scripts/startup-slurm-for-container.sh ./scripts/.
+cp $SCRIPT_DIR/../scripts/slurm-start.sh ./scripts/.
 
 # Build with Podman
-echo "Building with versions: libfabric=${LIBFABRIC_VERSION}, SLURM=${SLURM_VERSION}, MPICH=${MPICH_VERSION}, libiconv=${LIBICONV_VERSION}, Arrow=${ARROW_VERSION}, Chapel=${CHAPEL_VERSION}, Arkouda=${ARKOUDA_VERSION}"
+echo "Building with versions: libfabric=${LIBFABRIC_VERSION}, SLURM=${SLURM_VERSION}, libiconv=${LIBICONV_VERSION}, Arrow=${ARROW_VERSION}, Chapel=${CHAPEL_VERSION}, Arkouda=${ARKOUDA_VERSION}"
 
-docker build --progress plain -t "$PODMAN_IMAGE" -f "$CONTAINERFILE" \
+podman build --progress plain -t "$PODMAN_IMAGE" -f "$CONTAINERFILE" \
     --build-arg NCPUS=$(nproc) \
     --build-arg LIBFABRIC_VERSION="$LIBFABRIC_VERSION" \
     --build-arg SLURM_VERSION="$SLURM_VERSION" \
-    --build-arg MPICH_VERSION="$MPICH_VERSION" \
     --build-arg LIBICONV_VERSION="$LIBICONV_VERSION" \
     --build-arg ARROW_VERSION="$ARROW_VERSION" \
     --build-arg CHAPEL_VERSION="$CHAPEL_VERSION" \
     --build-arg ARKOUDA_VERSION="$ARKOUDA_VERSION" \
-    .
+
 BUILD_EXIT_CODE=$?
 echo "Build completed at: $(date)"
 echo "Final disk space: $(df -h . | tail -1 | awk '{print $4}')"
@@ -54,7 +56,7 @@ if [ $BUILD_EXIT_CODE -ne 0 ]; then
     exit 1
 fi
 
-rm -rf $SCRIPT_DIR/../containers/patches
+rm -rf $SCRIPT_DIR/../containers/patches $SCRIPT_DIR/../containers/configs $SCRIPT_DIR/../containers/scripts
 
 # Convert to SIF using shared conversion script
 echo "Converting to SIF format using convert-to-sif.sh..."
@@ -66,12 +68,9 @@ if [ $CONVERT_EXIT_CODE -eq 0 ]; then
 
     # Quick test
     echo "=== Quick Test ==="
-    apptainer exec "$OUTPUT_SIF" chpl --version
-    echo "Testing Arkouda server executable..."
+    echo "Testing if Arkouda server executable exists..."
     apptainer exec "$OUTPUT_SIF" ls -la /opt/arkouda/arkouda_server_real || echo "Arkouda server not found"
 
-    echo "Container ready for use"
-    echo "Usage: apptainer exec --bind <workspace_path> $OUTPUT_SIF /opt/arkouda/arkouda-server"
 else
     echo "SIF conversion failed"
     exit 1

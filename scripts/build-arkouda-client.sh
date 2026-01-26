@@ -32,12 +32,12 @@ cp ../patches/conftest.patch .
 cp ../patches/arkouda_index_test_temp_fix.patch .
 
 # Clean previous builds
-# docker rmi "$PODMAN_IMAGE" 2>/dev/null || true
+# podman rmi "$PODMAN_IMAGE" 2>/dev/null || true
 # rm -f "$OUTPUT_SIF"
 
 # Build with Podman
 echo "Building with Arrow version: ${ARROW_VERSION}, Arkouda version: ${ARKOUDA_VERSION}"
-docker build -t "$PODMAN_IMAGE" -f "$CONTAINERFILE" \
+podman build -t "$PODMAN_IMAGE" -f "$CONTAINERFILE" \
     --build-arg ARROW_VERSION="$ARROW_VERSION" \
     --build-arg ARKOUDA_VERSION="$ARKOUDA_VERSION" \
     .
