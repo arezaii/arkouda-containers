@@ -18,11 +18,14 @@ WORKSPACE_ROOT="${WORKSPACE_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}
 
 # Single shared directory for all Arkouda test operations
 ARKOUDA_SHARED_DIR="${WORKSPACE_ROOT}/arkouda-shared"
-mkdir -p "${ARKOUDA_SHARED_DIR}"
+mkdir -p "${ARKOUDA_SHARED_DIR}"/.pytest
+mkdir -p "${ARKOUDA_SHARED_DIR}"/.pytest_cache
 
 # Bind mounts for workspace access
 BIND_WORKSPACE="$(dirname "${WORKSPACE_ROOT}"):$(dirname "${WORKSPACE_ROOT}")"
 BIND_ARKOUDA_SHARED="${ARKOUDA_SHARED_DIR}:/opt/arkouda-shared:rw"
+BIND_DOT_PYTEST="${ARKOUDA_SHARED_DIR}/.pytest:/opt/arkouda/.pytest:rw"
+BIND_DOT_PYTEST_CACHE="${ARKOUDA_SHARED_DIR}/.pytest_cache:/opt/arkouda/.pytest_cache:rw"
 
 # Create shared test directories
 mkdir -p "${ARKOUDA_SHARED_DIR}/tmp"
@@ -79,16 +82,21 @@ elif [ "${CONTAINER_TYPE}" = "apptainer" ]; then
     export APPTAINERENV_TEMP="/opt/arkouda-shared/tmp"
     export APPTAINERENV_TMP="/opt/arkouda-shared/tmp"
 
+
     if [ $# -gt 0 ]; then
         exec apptainer exec \
             --bind "${BIND_WORKSPACE}" \
             --bind "${BIND_ARKOUDA_SHARED}" \
+            --bind "${BIND_DOT_PYTEST}" \
+            --bind "${BIND_DOT_PYTEST_CACHE}" \
             --pwd "${WORKSPACE_ROOT}" \
             "${SIF_FILE}" "$@"
     else
         exec apptainer shell \
             --bind "${BIND_WORKSPACE}" \
             --bind "${BIND_ARKOUDA_SHARED}" \
+            --bind "${BIND_DOT_PYTEST}" \
+            --bind "${BIND_DOT_PYTEST_CACHE}" \
             --pwd "${WORKSPACE_ROOT}" \
             "${SIF_FILE}"
     fi
