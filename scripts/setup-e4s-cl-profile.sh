@@ -1,6 +1,8 @@
 #!/bin/bash
 # Auto-execute e4s-cl profile commands for Chapel/Arkouda dependencies
-# This script runs the generate-e4s-cl-profile.sh and executes all valid commands
+# This script runs the generate-e4s-cl-profile.sh, lets the user choose
+# an e4s-cl profile (or create a new one), and executes all valid commands
+# while avoiding duplicate binds in that profile.
 
 set -e
 
@@ -12,7 +14,95 @@ if [ ! -x "$GENERATOR_SCRIPT" ]; then
     exit 1
 fi
 
-echo "=== Generating and executing e4s-cl profile commands for Chapel/Arkouda ==="
+if ! command -v e4s-cl >/dev/null 2>&1; then
+    echo "Error: e4s-cl not found in PATH. Load the appropriate module first."
+    exit 1
+fi
+
+NON_INTERACTIVE=0
+if [ "$1" = "--auto" ]; then
+    NON_INTERACTIVE=1
+fi
+
+get_selected_profile_name() {
+    # Try to get the currently selected profile name; return empty if none
+    local name
+    name=$(e4s-cl profile show 2>/dev/null | awk -F': ' '/^Profile name/ {print $2; exit}' || true)
+    echo "$name"
+}
+
+select_or_create_profile() {
+    local non_interactive="$1"
+    local active name
+
+    active=$(get_selected_profile_name)
+
+    if [ -n "$active" ] && [ "$non_interactive" -eq 1 ]; then
+        echo "Using currently selected e4s-cl profile: $active"
+        PROFILE_NAME="$active"
+        return
+    fi
+
+    if [ -n "$active" ]; then
+        echo "Currently selected e4s-cl profile: $active"
+        if [ "$non_interactive" -eq 0 ]; then
+            read -p "Use this profile? (Y/n): " -r reply
+            echo ""
+            if [[ ! "$reply" =~ ^[Nn]$ ]]; then
+                PROFILE_NAME="$active"
+                return
+            fi
+        else
+            PROFILE_NAME="$active"
+            return
+        fi
+    else
+        echo "No e4s-cl profile is currently selected."
+    fi
+
+    if [ "$non_interactive" -eq 1 ]; then
+        echo "Error: No selected profile and --auto specified."
+        echo "       Please run this script interactively once to create/select a profile."
+        exit 1
+    fi
+
+    while true; do
+        read -p "Enter profile name to use (existing will be selected, new will be created): " name
+        echo ""
+        if [ -n "$name" ]; then
+            break
+        fi
+        echo "Profile name cannot be empty."
+    done
+
+    if e4s-cl profile show "$name" >/dev/null 2>&1; then
+        echo "Selecting existing e4s-cl profile: $name"
+    else
+        echo "Creating new e4s-cl profile: $name"
+        if ! e4s-cl profile create "$name"; then
+            echo "Error: Failed to create profile '$name'." >&2
+            exit 1
+        fi
+    fi
+
+    if ! e4s-cl profile select "$name"; then
+        echo "Error: Failed to select profile '$name'." >&2
+        exit 1
+    fi
+
+    PROFILE_NAME="$name"
+}
+
+echo "=== Determining target e4s-cl profile for Chapel/Arkouda ==="
+echo ""
+
+PROFILE_NAME=""
+select_or_create_profile "$NON_INTERACTIVE"
+
+echo "Using e4s-cl profile: $PROFILE_NAME"
+echo ""
+
+echo "=== Generating e4s-cl profile edit commands for Chapel/Arkouda ==="
 echo ""
 
 # Check if e4s-cl is available
@@ -47,13 +137,122 @@ if [ -z "$COMMANDS" ]; then
     exit 1
 fi
 
-echo "Found $(echo "$COMMANDS" | wc -l) library/directory entries to add."
+echo "Found $(echo "$COMMANDS" | wc -l) library/directory entries to consider."
 echo ""
 
+# Fetch existing bindings from the selected profile to avoid duplicate adds
+EXISTING_LIBS=()
+EXISTING_FILES=()
+
+PROFILE_JSON=$(e4s-cl profile dump "$PROFILE_NAME" 2>/dev/null | awk 'BEGIN{found=0} /^[[:space:]]*[\[{]/{found=1} found{print}')
+
+if [ -n "$PROFILE_JSON" ]; then
+    if ! mapfile -t EXISTING_LIBS < <(printf '%s\n' "$PROFILE_JSON" | python3 -c '
+import sys, json
+text = sys.stdin.read().strip()
+if not text:
+    raise SystemExit(1)
+data = json.loads(text)
+if isinstance(data, list) and data:
+    prof = data[0]
+elif isinstance(data, dict):
+    prof = data
+else:
+    prof = {}
+for p in prof.get("libraries", []):
+    print(p)
+'); then
+        EXISTING_LIBS=()
+    fi
+
+    if ! mapfile -t EXISTING_FILES < <(printf '%s\n' "$PROFILE_JSON" | python3 -c '
+import sys, json
+text = sys.stdin.read().strip()
+if not text:
+    raise SystemExit(1)
+data = json.loads(text)
+if isinstance(data, list) and data:
+    prof = data[0]
+elif isinstance(data, dict):
+    prof = data
+else:
+    prof = {}
+for p in prof.get("files", []):
+    print(p)
+'); then
+        EXISTING_FILES=()
+    fi
+fi
+
+path_in_list() {
+    local needle="$1"; shift
+    if [ "$#" -eq 0 ]; then
+        return 1
+    fi
+    # Reason: avoid set -e exiting on a non-match from grep
+    if printf '%s\n' "$@" | grep -Fxq "$needle"; then
+        return 0
+    fi
+    return 1
+}
+
+show_next_steps() {
+    echo ""
+    echo "Next steps: Configure the container image and backend for this profile:"
+    echo "  e4s-cl profile edit --image <path-to-container.sif> '$PROFILE_NAME'"
+    echo "  e4s-cl profile edit --backend apptainer '$PROFILE_NAME'"
+    echo ""
+    echo "Example:"
+    echo "  e4s-cl profile edit --image /path/to/chapel-arkouda.sif '$PROFILE_NAME'"
+}
+
+FILTERED_COMMANDS=()
+NEW_LIBS=()
+NEW_FILES=()
+SKIP_COUNT=0
+
+while IFS= read -r cmd; do
+    # Determine what path this command is trying to add
+    type=""
+    if [[ "$cmd" == *"--add-libraries"* ]]; then
+        type="lib"
+    elif [[ "$cmd" == *"--add-files"* ]]; then
+        type="file"
+    fi
+
+    path="$(echo "$cmd" | sed -E 's/.*"([^"]+)".*/\1/')"
+
+    if [ -n "$type" ] && [ -n "$path" ]; then
+        if [ "$type" = "lib" ]; then
+            if path_in_list "$path" "${EXISTING_LIBS[@]}" "${NEW_LIBS[@]}"; then
+                ((SKIP_COUNT++)) || true
+                continue
+            fi
+            NEW_LIBS+=("$path")
+        else
+            if path_in_list "$path" "${EXISTING_FILES[@]}" "${NEW_FILES[@]}"; then
+                ((SKIP_COUNT++)) || true
+                continue
+            fi
+            NEW_FILES+=("$path")
+        fi
+    fi
+
+    FILTERED_COMMANDS+=("$cmd")
+done <<< "$COMMANDS"
+
+if [ "${#FILTERED_COMMANDS[@]}" -eq 0 ]; then
+    echo "No changes applied. All requested paths already exist in profile '$PROFILE_NAME'."
+    echo "Skipped (already present): $SKIP_COUNT"
+    echo "Nothing to add; verify with: e4s-cl profile show '$PROFILE_NAME'"
+    show_next_steps
+    exit 0
+fi
+
 # Ask for confirmation unless --auto flag is provided
-if [ "$1" != "--auto" ]; then
-    echo "Commands to execute:"
-    echo "$COMMANDS"
+if [ "$NON_INTERACTIVE" -eq 0 ]; then
+    echo "Commands to execute (after skipping already-bound paths):"
+    printf '%s\n' "${FILTERED_COMMANDS[@]}"
     echo ""
     read -p "Execute these commands? (y/N): " -n 1 -r
     echo ""
@@ -63,33 +262,35 @@ if [ "$1" != "--auto" ]; then
     fi
 fi
 
-echo "Executing e4s-cl profile commands..."
+echo "Executing e4s-cl profile commands against profile: $PROFILE_NAME"
 echo ""
 
 # Execute each command with error handling
 SUCCESS_COUNT=0
 FAIL_COUNT=0
 
-while IFS= read -r cmd; do
+for cmd in "${FILTERED_COMMANDS[@]}"; do
     echo "Running: $cmd"
     if eval "$cmd"; then
         echo "  [OK] Success"
-        ((SUCCESS_COUNT++))
+        ((SUCCESS_COUNT++)) || true
     else
         echo "  [FAIL] Failed (exit code: $?)"
-        ((FAIL_COUNT++))
+        ((FAIL_COUNT++)) || true
     fi
     echo ""
-done <<< "$COMMANDS"
+done
 
-echo "=== Summary ==="
-echo "Successful: $SUCCESS_COUNT"
+echo "=== Summary for profile '$PROFILE_NAME' ==="
+echo "Successful adds: $SUCCESS_COUNT"
+echo "Skipped (already present): $SKIP_COUNT"
 echo "Failed: $FAIL_COUNT"
 echo ""
 
 if [ $FAIL_COUNT -eq 0 ]; then
-    echo "All libraries successfully added to e4s-cl profile!"
-    echo "Verify with: e4s-cl profile show"
+    echo "All requested libraries/files processed for e4s-cl profile '$PROFILE_NAME'."
+    echo "Verify with: e4s-cl profile show '$PROFILE_NAME'"
+    show_next_steps
 else
     echo "Some commands failed. Check the output above for details."
     exit 1

@@ -47,6 +47,7 @@ podman build --progress plain -t "$PODMAN_IMAGE" -f "$CONTAINERFILE" \
     --build-arg ARROW_VERSION="$ARROW_VERSION" \
     --build-arg CHAPEL_VERSION="$CHAPEL_VERSION" \
     --build-arg ARKOUDA_VERSION="$ARKOUDA_VERSION" \
+    .
 
 BUILD_EXIT_CODE=$?
 echo "Build completed at: $(date)"
