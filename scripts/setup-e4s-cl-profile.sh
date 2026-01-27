@@ -15,11 +15,35 @@ fi
 echo "=== Generating and executing e4s-cl profile commands for Chapel/Arkouda ==="
 echo ""
 
+# Check if e4s-cl is available
+if ! command -v e4s-cl &> /dev/null; then
+    echo "Warning: e4s-cl command not found. Please ensure E4S-CL is installed and available in PATH."
+    exit 1
+fi
+
+# Check if an e4s-cl profile exists
+if ! e4s-cl profile show &> /dev/null; then
+    echo "Warning: No e4s-cl profile found or e4s-cl profile is not properly configured."
+    echo "Please create and configure an e4s-cl profile first using:"
+    echo "  e4s-cl profile create <profile-name>"
+    echo "  e4s-cl profile activate <profile-name>"
+    exit 1
+fi
+
 # Generate commands and filter only the executable ones
 COMMANDS=$($GENERATOR_SCRIPT | grep '^e4s-cl profile edit')
 
 if [ -z "$COMMANDS" ]; then
-    echo "No valid e4s-cl commands generated. Check if libraries are available."
+    echo "No valid e4s-cl profile edit commands were generated."
+    echo "This could mean:"
+    echo "  - Required Chapel/Arkouda libraries are not available in the expected locations"
+    echo "  - The generator script failed to find compatible library installations"
+    echo "  - Libraries are installed but not in standard paths"
+    echo ""
+    echo "Please check:"
+    echo "  1. Chapel installation and CHPL_HOME environment variable"
+    echo "  2. Arkouda installation and dependencies"
+    echo "  3. Library paths in the generator script"
     exit 1
 fi
 
