@@ -23,9 +23,10 @@ mkdir -p "${ARKOUDA_SHARED_DIR}"/.pytest_cache
 
 # Bind mounts for workspace access
 BIND_WORKSPACE="$(dirname "${WORKSPACE_ROOT}"):$(dirname "${WORKSPACE_ROOT}")"
-BIND_ARKOUDA_SHARED="${ARKOUDA_SHARED_DIR}:/opt/arkouda-shared:rw"
+BIND_ARKOUDA_SHARED="${ARKOUDA_SHARED_DIR}:/opt/arkouda/shared_tests:rw"
 BIND_DOT_PYTEST="${ARKOUDA_SHARED_DIR}/.pytest:/opt/arkouda/.pytest:rw"
 BIND_DOT_PYTEST_CACHE="${ARKOUDA_SHARED_DIR}/.pytest_cache:/opt/arkouda/.pytest_cache:rw"
+BIND_DOT_AKDATA="${ARKOUDA_SHARED_DIR}/.akdata:/opt/arkouda/.akdata:rw"
 
 # Create shared test directories
 mkdir -p "${ARKOUDA_SHARED_DIR}/tmp"
@@ -35,7 +36,7 @@ export ARKOUDA_RUNNING_MODE=CLIENT
 export ARKOUDA_NUMLOCALES="${ARKOUDA_NUMLOCALES}"
 export ARKOUDA_SERVER_HOST="${ARKOUDA_SERVER_HOST}"
 export ARKOUDA_SERVER_PORT="${ARKOUDA_SERVER_PORT}"
-export ARKOUDA_DEFAULT_TEMP_DIRECTORY="/opt/arkouda-shared"
+export ARKOUDA_DEFAULT_TEMP_DIRECTORY="/opt/arkouda/shared_tests"
 
 # Launch container
 if [ "${CONTAINER_TYPE}" = "podman" ]; then
@@ -53,7 +54,7 @@ if [ "${CONTAINER_TYPE}" = "podman" ]; then
             --env "TMP=/opt/arkouda-shared/tmp" \
             "${PODMAN_IMAGE}" "$@"
     else
-        exec podman run --rm -it \
+        exec podman run --rm -it \/
             --volume "${BIND_WORKSPACE}" \
             --volume "${BIND_ARKOUDA_SHARED}" \
             --env "ARKOUDA_RUNNING_MODE=CLIENT" \
@@ -89,6 +90,8 @@ elif [ "${CONTAINER_TYPE}" = "apptainer" ]; then
             --bind "${BIND_ARKOUDA_SHARED}" \
             --bind "${BIND_DOT_PYTEST}" \
             --bind "${BIND_DOT_PYTEST_CACHE}" \
+            --bind "${BIND_DOT_AKDATA}" \
+            --bind "${BIND_SHARED_TEST}" \
             --pwd "${WORKSPACE_ROOT}" \
             "${SIF_FILE}" "$@"
     else
@@ -97,6 +100,8 @@ elif [ "${CONTAINER_TYPE}" = "apptainer" ]; then
             --bind "${BIND_ARKOUDA_SHARED}" \
             --bind "${BIND_DOT_PYTEST}" \
             --bind "${BIND_DOT_PYTEST_CACHE}" \
+            --bind "${BIND_DOT_AKDATA}" \
+            --bind "${BIND_SHARED_TEST}" \
             --pwd "${WORKSPACE_ROOT}" \
             "${SIF_FILE}"
     fi
