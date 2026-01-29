@@ -303,6 +303,7 @@ RUN apt-get update && apt-get install -y \
     --no-install-recommends \
     apt-transport-https \
     ca-certificates \
+    fuse2fs \
     gnupg \
     lsb-release \
     wget \
@@ -398,13 +399,10 @@ ENV CHPL_TARGET_PLATFORM=hpe-cray-ex
 ENV CHPL_HOST_PLATFORM=linux64
 ENV LIBFABRIC_DIR=/opt/libfabric
 
-# Create shared test directory mount point and symlinks
+# Create shared test directory mount point
 # The actual test directories will be mounted from shared storage at runtime
-RUN mkdir -p /opt/arkouda/shared_tests && \
-    ln -sf /opt/arkouda/shared_tests/.seg_test /opt/arkouda/.seg_test && \
-    ln -sf /opt/arkouda/shared_tests/.par_io_test /opt/arkouda/.par_io_test && \
-    ln -sf /opt/arkouda/shared_tests/.hdf_test /opt/arkouda/.hdf_test && \
-    ln -sf /opt/arkouda/shared_tests/.categorical_test /opt/arkouda/.categorical_test
+RUN mkdir -p /opt/arkouda/shared_tests
+ENV ARKOUDA_DEFAULT_TEMP_DIRECTORY=/opt/arkouda/shared_tests
 
 # Set up environment for interactive use
 RUN echo '# Slurm environment setup' >> /etc/bash.bashrc && \
