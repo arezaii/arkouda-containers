@@ -79,9 +79,9 @@ elif [ "${CONTAINER_TYPE}" = "apptainer" ]; then
     export APPTAINERENV_ARKOUDA_SERVER_HOST="${ARKOUDA_SERVER_HOST}"
     export APPTAINERENV_ARKOUDA_SERVER_PORT="${ARKOUDA_SERVER_PORT}"
     export APPTAINERENV_ARKOUDA_DEFAULT_TEMP_DIRECTORY="${ARKOUDA_DEFAULT_TEMP_DIRECTORY}"
-    export APPTAINERENV_TMPDIR="/opt/arkouda-shared/tmp"
-    export APPTAINERENV_TEMP="/opt/arkouda-shared/tmp"
-    export APPTAINERENV_TMP="/opt/arkouda-shared/tmp"
+    export APPTAINERENV_TMPDIR="/opt/arkouda/shared_tests/tmp"
+    export APPTAINERENV_TEMP="/opt/arkouda/shared_tests/tmp"
+    export APPTAINERENV_TMP="/opt/arkouda/shared_tests/tmp"
 
 
     if [ $# -gt 0 ]; then
