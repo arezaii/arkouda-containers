@@ -72,37 +72,12 @@ fi
 echo ""
 echo "# === Process Management Interface (PMI) Libraries ==="
 
-# PMI libraries - find the newest version available
+# PMI2 libraries - find the newest version available
 PMI_DIR=$(ls -d /opt/cray/pe/pmi/*/lib 2>/dev/null | sort -V | tail -1)
 if [ -n "$PMI_DIR" ] && [ -f "$PMI_DIR/libpmi2.so.0.6.0" ]; then
     add_dir_to_profile "$PMI_DIR" "PMI library directory (newest version)"
     add_to_profile "$PMI_DIR/libpmi2.so.0.6.0" "PMI2 library"
-    add_to_profile "$PMI_DIR/libpmi.so.0.6.0" "PMI library"
     add_to_profile "$PMI_DIR/libpmi2.so.0" "PMI2 library (symlink)"
-    add_to_profile "$PMI_DIR/libpmi.so.0" "PMI library (symlink)"
-fi
-
-# PALS libraries
-PALS_PATH=$(ls /opt/cray/pals/*/lib/libpals.so.0 2>/dev/null | sort -V | tail -1)
-if [ -n "$PALS_PATH" ]; then
-    add_to_profile "$PALS_PATH" "PALS (Parallel Application Launch Service)"
-    PALS_DIR=$(dirname "$PALS_PATH")
-    add_dir_to_profile "$PALS_DIR" "PALS library directory"
-fi
-
-# PE PALS fallback
-PALS_PE_PATH=$(ls /opt/cray/pe/lib64/libpals.so.0 2>/dev/null | sort -V | tail -1)
-if [ -n "$PALS_PE_PATH" ]; then
-    add_to_profile "$PALS_PE_PATH" "PALS PE library (fallback)"
-fi
-
-echo ""
-echo "# === Utility Libraries ==="
-
-# LZ4 compression
-LZ4_PATH=$(ls /usr/lib*/liblz4.so.1 2>/dev/null | sort -V | tail -1)
-if [ -n "$LZ4_PATH" ]; then
-    add_to_profile "$LZ4_PATH" "LZ4 compression library"
 fi
 
 echo ""
