@@ -30,6 +30,7 @@ fi
 # Copy patch files from patches directory to build context
 cp ../patches/conftest.patch .
 cp ../patches/arkouda_index_test_temp_fix.patch .
+cp ../patches/benchmark_conftest.patch .
 
 # Clean previous builds
 # podman rmi "$PODMAN_IMAGE" 2>/dev/null || true

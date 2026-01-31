@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     python3-venv \
     git \
+    fuse2fs \
     vim \
     && rm -rf /var/lib/apt/lists/*
 
@@ -34,6 +35,9 @@ RUN cd /opt/arkouda && patch -p1 < /tmp/conftest.patch
 COPY arkouda_index_test_temp_fix.patch /tmp/
 RUN cd /opt/arkouda && patch -p1 < /tmp/arkouda_index_test_temp_fix.patch
 
+COPY benchmark_conftest.patch tmp/
+RUN cd /opt/arkouda && patch -p1 < /tmp/benchmark_conftest.patch
+
 # Install build dependencies for pyproject.toml support
 RUN ${CLIENT_VENV}/bin/pip install --no-cache-dir \
     setuptools>=64 \
@@ -47,19 +51,15 @@ RUN cd /opt/arkouda && \
     pyarrow==${ARROW_VERSION} \
     && ${CLIENT_VENV}/bin/pip install --no-cache-dir -e .[dev]
 
-# Create shared test directory mount point and symlinks
+# Create shared test directory
 # The actual test directories will be mounted from shared storage at runtime
-RUN mkdir -p /opt/arkouda/shared_tests && \
-    ln -sf /opt/arkouda/shared_tests/.seg_test /opt/arkouda/.seg_test && \
-    ln -sf /opt/arkouda/shared_tests/.par_io_test /opt/arkouda/.par_io_test && \
-    ln -sf /opt/arkouda/shared_tests/.hdf_test /opt/arkouda/.hdf_test && \
-    ln -sf /opt/arkouda/shared_tests/.categorical_test /opt/arkouda/.categorical_test
+RUN mkdir -p /opt/arkouda/shared_tests
 
 # Copy the multi-dimensional registration config (should match server config)
 RUN cp /opt/arkouda/.configs/registration-config-multi-dim.json /opt/arkouda/registration-config.json
 
 # Set working directory
-WORKDIR /workspace
+WORKDIR /opt/arkouda
 
 # Default to bash
 CMD ["/bin/bash"]

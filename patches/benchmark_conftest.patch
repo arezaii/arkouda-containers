@@ -1,0 +1,137 @@
+diff --git a/benchmark_v2/conftest.py b/benchmark_v2/conftest.py
+index 03c15f72a..257ae6f67 100644
+--- a/benchmark_v2/conftest.py
++++ b/benchmark_v2/conftest.py
+@@ -1,6 +1,7 @@
+ import importlib
+ import importlib.util
+ import os
++import subprocess
+ import sys
+
+ from typing import Iterable, Iterator
+@@ -13,6 +14,7 @@ from arkouda.client import get_array_ranks
+ from server_util.test.server_test_util import (
+     TestRunningMode,
+     get_arkouda_numlocales,
++    is_multilocale_arkouda,
+     start_arkouda_server,
+     stop_arkouda_server,
+ )
+@@ -23,6 +25,79 @@ default_encoding = ["ascii", "idna"]
+ default_compression = [None, "snappy", "gzip", "brotli", "zstd", "lz4"]
+
+
++def _safe_get_chpl_home():
++    """
++    Safely get Chapel home directory. Returns None if Chapel tools are not available.
++    Used in CLIENT mode where Chapel compiler may not be installed.
++    """
++    try:
++        return subprocess.check_output(["chpl", "--print-chpl-home"]).decode("utf-8").strip()
++    except (subprocess.CalledProcessError, FileNotFoundError):
++        return None
++
++
++def _safe_check_asan():
++    """
++    Safely check ASAN configuration. Returns False if Chapel tools are not available.
++    Used in CLIENT mode where Chapel compiler may not be installed.
++    """
++    chpl_home = _safe_get_chpl_home()
++    if chpl_home is None:
++        return False
++    try:
++        asan_result = subprocess.check_output(
++            [f"{chpl_home}/util/chplenv/chpl_sanitizers.py", "--exe"]
++        ).decode("utf-8").strip()
++        return asan_result != "none"
++    except (subprocess.CalledProcessError, FileNotFoundError):
++        return False
++
++
++def _safe_is_multilocale_arkouda():
++    """
++    Safely check if arkouda server supports multilocale.
++    Returns False if server binary is not available (CLIENT mode).
++    """
++    try:
++        return is_multilocale_arkouda()
++    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
++        return False
++
++
++def _safe_get_arkouda_numlocales():
++    """
++    Safely get arkouda numlocales. Returns environment variable value or 1 if
++    server binary is not available (CLIENT mode).
++    """
++    try:
++        return get_arkouda_numlocales()
++    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
++        # In CLIENT mode, use environment variable or default to 1
++        env_nl = os.getenv("ARKOUDA_NUMLOCALES")
++        if env_nl:
++            return int(env_nl)
++        return 1
++
++
++def _get_test_locales(config):
++    """
++    Set the number of locales to run Arkouda with.
++    The default is 2 provided Arkouda is configured for multi-locale.
++    Otherwise, 1 locale will be used.
++    In CLIENT mode, uses environment variable or defaults to 1.
++    """
++    # In CLIENT mode, we can't check server capabilities, so use environment or default
++    test_mode = TestRunningMode(os.getenv("ARKOUDA_RUNNING_MODE", "CLASS_SERVER"))
++    if test_mode == TestRunningMode.CLIENT:
++        # Use ARKOUDA_NUMLOCALES if set, otherwise use the --nl option, default to 1
++        env_nl = os.getenv("ARKOUDA_NUMLOCALES")
++        if env_nl:
++            return int(env_nl)
++        return eval(config.getoption("nl")) if config.getoption("nl") != "2" else 1
++
++    return eval(config.getoption("nl")) if _safe_is_multilocale_arkouda() else 1
++
++
+ def pytest_addoption(parser):
+     default_host = os.getenv("ARKOUDA_SERVER_HOST", "localhost")
+     parser.addoption(
+@@ -41,7 +116,7 @@ def pytest_addoption(parser):
+         help="arkouda server port",
+     )
+
+-    default_nl = get_arkouda_numlocales()
++    default_nl = _safe_get_arkouda_numlocales()
+     parser.addoption(
+         "--nl",
+         action="store",
+@@ -202,7 +277,7 @@ def pytest_addoption(parser):
+ def pytest_configure(config):
+     pytest.host = config.getoption("host")
+     pytest.port = config.getoption("port")
+-    pytest.nl = config.getoption("nl")
++    pytest.nl = _get_test_locales(config)
+     pytest.running_mode = TestRunningMode(config.getoption("running_mode"))
+     pytest.verbose = config.getoption("verbose")
+     pytest.client_timeout = config.getoption("client_timeout")
+@@ -226,6 +301,18 @@ def pytest_configure(config):
+         None if config.getoption("value_size") == "" else eval(config.getoption("value_size"))
+     )
+
++    # Safely handle Chapel compiler dependencies - may not be available in CLIENT mode
++    pytest.client_host = subprocess.check_output("hostname").decode("utf-8").strip()
++    chpl_home = _safe_get_chpl_home()
++    if chpl_home is not None:
++        pytest.asan = _safe_check_asan()
++    else:
++        # In CLIENT mode without Chapel tools, assume no ASAN
++        pytest.asan = False
++        if pytest.running_mode == TestRunningMode.CLIENT:
++            print("Warning: Chapel compiler not found. Running in CLIENT mode " +
++                  "without Chapel tool checks.")
++
+     # IO settings
+     comp_str = config.getoption("io_compression")
+     pytest.io_compression = default_compression if comp_str == "" else comp_str.split(",")
