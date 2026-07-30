@@ -1,0 +1,231 @@
+# Containerfile for Arkouda built on pre-built Chapel container
+# Uses chapel:hpe-cray-ex-main as base (contains both hpe-cray-ex and linux64 runtimes)
+# The Chapel base is expected to carry the same CXI-enabled libfabric path that
+# produces a fast image: public HPE CXI headers, libcxi, and
+# /opt/libfabric built with --enable-cxi.
+# ================================================================================
+
+# Build arguments for version control
+ARG CHAPEL_BASE_IMAGE=localhost/chapel-2.8.0-libfabric-2.3.1-cxi:latest
+ARG LIBICONV_VERSION=1.17
+ARG ARROW_VERSION=19.0.1-1
+ARG ARKOUDA_VERSION=2026.02.27
+
+# ========================================
+# Stage 1: Arkouda Builder
+# Uses pre-built Chapel container as base
+# ========================================
+FROM ${CHAPEL_BASE_IMAGE} AS arkouda-builder
+
+# Re-declare build arguments for this stage
+ARG LIBICONV_VERSION=1.17
+ARG ARROW_VERSION=19.0.1-1
+ARG ARKOUDA_VERSION=2026.02.27
+
+# Install additional packages needed for Arkouda that may not be in Chapel base
+RUN apt-get update && apt-get install -y \
+    --no-install-recommends \
+    apt-transport-https \
+    ca-certificates \
+    gnupg \
+    lsb-release \
+    autoconf \
+    automake \
+    libtool \
+    flex \
+    bison \
+    gfortran \
+    wget \
+    libzmq3-dev \
+    libhdf5-dev \
+    libhdf5-serial-dev \
+    hdf5-tools \
+    libidn2-dev \
+    libcurl4-openssl-dev \
+    libssl-dev \
+    libre2-dev \
+    && wget -qO /tmp/apache-arrow-apt.deb \
+        https://packages.apache.org/artifactory/arrow/debian/apache-arrow-apt-source-latest-$(lsb_release -cs).deb \
+    && apt-get install -y /tmp/apache-arrow-apt.deb \
+    && apt-get update \
+    && apt-get install -y \
+        --no-install-recommends \
+        libarrow-dev=${ARROW_VERSION} \
+        libparquet-dev=${ARROW_VERSION} \
+    && rm -f /tmp/apache-arrow-apt.deb \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set environment variables
+ENV ARKOUDA_HOME=/opt/arkouda
+ENV ARKOUDA_VENV=/opt/arkouda-venv
+
+# Create Python venv using system Python
+RUN python3 -m venv ${ARKOUDA_VENV}
+ENV PATH=${ARKOUDA_VENV}/bin:${PATH}
+ENV VIRTUAL_ENV=${ARKOUDA_VENV}
+
+# Download Arkouda source
+RUN cd /opt && \
+    arkouda_ref="${ARKOUDA_VERSION}" && \
+    if echo "${ARKOUDA_VERSION}" | grep -Eq '^[0-9]{4}\.[0-9]{2}\.[0-9]{2}$'; then \
+        arkouda_ref="v${ARKOUDA_VERSION}"; \
+    fi && \
+    git clone --depth 1 --branch "${arkouda_ref}" https://github.com/Bears-R-Us/arkouda.git
+
+# Copy patches directory (may be empty, that's OK)
+COPY patches/ /tmp/patches/
+
+# Apply patches conditionally based on Arkouda version
+RUN if [ "${ARKOUDA_VERSION}" = "2025.09.30" ]; then \
+        echo "Applying versioneer patch for Arkouda ${ARKOUDA_VERSION}" && \
+        cd /opt/arkouda && \
+        if [ -f "/tmp/patches/versioneer_update.patch" ]; then \
+            patch -p1 < /tmp/patches/versioneer_update.patch && \
+            echo "Patch applied successfully"; \
+        else \
+            echo "WARNING: versioneer_update.patch not found"; \
+        fi; \
+    else \
+        echo "No patches needed for Arkouda version ${ARKOUDA_VERSION}"; \
+    fi
+
+# Install build dependencies needed for pyproject.toml parsing
+RUN ${ARKOUDA_VENV}/bin/pip install --no-cache-dir \
+    setuptools>=64 \
+    wheel \
+    versioneer[toml]>=0.22
+
+# Install Arkouda's runtime dependencies using its own pyproject.toml
+RUN cd /opt/arkouda && \
+    ${ARKOUDA_VENV}/bin/pip install --no-cache-dir -e .[dev]
+
+# Build GNU libiconv from source - required for Arkouda
+RUN cd /tmp && \
+    wget https://ftp.gnu.org/pub/gnu/libiconv/libiconv-${LIBICONV_VERSION}.tar.gz && \
+    tar --no-same-owner -xzf libiconv-${LIBICONV_VERSION}.tar.gz && \
+    cd libiconv-${LIBICONV_VERSION} && \
+    ./configure --prefix=/usr/local --enable-shared --enable-static && \
+    make -j$(nproc) && \
+    make install && \
+    ldconfig && \
+    rm -rf /tmp/libiconv-${LIBICONV_VERSION} /tmp/libiconv-${LIBICONV_VERSION}.tar.gz
+
+# Update library paths to include libiconv
+ENV LD_LIBRARY_PATH=/usr/local/lib:${LD_LIBRARY_PATH}
+ENV LIBRARY_PATH=/usr/local/lib:${LIBRARY_PATH}
+ENV CPATH=/usr/local/include:${CPATH}
+
+# Set Arkouda build environment variables
+ENV ARKOUDA_ZMQ_PATH=/usr/lib/x86_64-linux-gnu
+ENV ARKOUDA_HDF5_PATH=/usr/lib/x86_64-linux-gnu/hdf5/serial
+
+# Build Arkouda with HPE-Cray-EX configuration
+# Chapel environment variables are inherited from the base image
+# Parquet is always enabled for this build
+RUN cd /opt/arkouda && \
+    ldconfig && \
+    ldconfig -p | grep -E "lib(arrow|parquet)" && \
+    cp .configs/registration-config-multi-dim.json registration-config.json && \
+    CHPL_FLAGS="--instantiate-max=1024" ARKOUDA_SKIP_CHECK_DEPS=true make ARRAY_ND_MAX=3
+
+# ========================================
+# Stage 2: Final Runtime Container
+# Uses the Chapel base runtime layer directly
+# ========================================
+FROM ${CHAPEL_BASE_IMAGE} AS runtime
+
+# Re-declare build argument for this stage
+ARG ARKOUDA_VERSION=2026.02.27
+ARG ARROW_VERSION=19.0.1-1
+
+# Copy built Arkouda binaries and Python environment
+COPY --from=arkouda-builder /opt/arkouda /opt/arkouda
+COPY --from=arkouda-builder /opt/arkouda-venv /opt/arkouda-venv
+
+# Copy GNU libiconv libraries
+COPY --from=arkouda-builder /usr/local/lib/libiconv* /usr/local/lib/
+COPY --from=arkouda-builder /usr/local/lib/libcharset* /usr/local/lib/
+
+RUN apt-get update && apt-get install -y \
+    --no-install-recommends \
+    apt-transport-https \
+    ca-certificates \
+    gnupg \
+    lsb-release \
+    wget \
+    && wget -qO /tmp/apache-arrow-apt.deb \
+        https://packages.apache.org/artifactory/arrow/debian/apache-arrow-apt-source-latest-$(lsb_release -cs).deb \
+    && apt-get install -y /tmp/apache-arrow-apt.deb \
+    && apt-get update \
+    && apt-get install -y \
+        --no-install-recommends \
+        libarrow-dev=${ARROW_VERSION} \
+        libparquet-dev=${ARROW_VERSION} \
+        libzmq3-dev \
+        libhdf5-dev \
+        libhdf5-serial-dev \
+        hdf5-tools \
+        libidn2-dev \
+        libre2-dev \
+        libcurl4-openssl-dev \
+        libssl-dev \
+        munge \
+        slurm-wlm \
+    && rm -f /tmp/apache-arrow-apt.deb \
+    && rm -rf /var/lib/apt/lists/*
+
+# Update library cache
+RUN ldconfig
+
+# Verify required Arkouda runtime libraries are present
+RUN ldconfig -p | grep -q 'libarrow\.so'
+RUN ldconfig -p | grep -q 'libparquet\.so'
+
+RUN ldconfig -p | grep -q 'libiconv\.so'
+RUN ldconfig -p | grep -q 'libidn2\.so' 
+RUN ldconfig -p | grep -q 'libre2\.so'     
+RUN ldconfig -p | grep -q 'libzmq\.so'
+
+RUN ldconfig -p | grep -q 'libhdf5'
+
+# Set up minimal SLURM configuration for standalone operation
+RUN mkdir -p /etc/slurm /etc/munge /var/log/slurm /var/spool/slurm /run/slurm && \
+    chmod 755 /var/log/slurm /var/spool/slurm /run/slurm
+
+# Copy SLURM configuration for single-node operation
+COPY configs/slurm.conf /etc/slurm/slurm.conf
+COPY configs/cgroup.conf /etc/slurm/cgroup.conf
+
+# Create MUNGE key for authentication
+RUN dd if=/dev/urandom bs=1 count=1024 > /etc/munge/munge.key && \
+    chown munge:munge /etc/munge/munge.key && \
+    chmod 400 /etc/munge/munge.key
+
+# Copy SLURM startup scripts
+COPY scripts/startup-slurm-for-container.sh /opt/startup-slurm-for-container.sh
+COPY scripts/slurm-start.sh /usr/local/bin/slurm-start
+RUN chmod +x /opt/startup-slurm-for-container.sh /usr/local/bin/slurm-start
+
+# Set up environment variables
+ENV ARKOUDA_HOME=/opt/arkouda \
+    ARKOUDA_VENV=/opt/arkouda-venv \
+    VIRTUAL_ENV=/opt/arkouda-venv
+
+ENV PATH=${ARKOUDA_VENV}/bin:${ARKOUDA_HOME}:${PATH}
+
+# Chapel environment and runtime stack are inherited from the base Chapel image
+
+# Create shared test directory mount point
+RUN mkdir -p /opt/arkouda/shared_tests
+ENV ARKOUDA_DEFAULT_TEMP_DIRECTORY=/opt/arkouda/shared_tests
+
+# Set working directory
+WORKDIR /opt/arkouda
+
+# Default command
+CMD ["/bin/bash"]
+
+# Add metadata labels
+LABEL description="Arkouda built on pre-built Chapel container with HPE-Cray-EX + CXI support"
+LABEL arkouda.version="${ARKOUDA_VERSION}"
+LABEL arkouda.runtime="hpe-cray-ex-ofi-cxi"

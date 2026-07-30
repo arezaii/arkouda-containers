@@ -1,0 +1,272 @@
+# Recovered Containerfile for the lost Debian-based Chapel multi-runtime base.
+#
+# This file is meant to reproduce the lineage behind the local image tagged as:
+# - arezaiihpe/chapel-mutli-rt-base:2.8.0
+# - chapel-hpe-cray-ex:dev
+#
+# It keeps the Debian bookworm base and the dual-runtime Chapel build shape:
+# - HPE Cray EX target runtime using libfabric 1.22.0 with CXI support
+# - Standard linux64 target runtime using CHPL_COMM=none
+
+FROM debian:bookworm-slim AS chapel-runtime-base
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    autoconf \
+    automake \
+    bash \
+    bison \
+    build-essential \
+    ca-certificates \
+    clang \
+    cmake \
+    curl \
+    file \
+    flex \
+    g++ \
+    gcc \
+    gfortran \
+    git \
+    libclang-cpp-dev \
+    libclang-dev \
+    libconfig-dev \
+    libcurl4-openssl-dev \
+    libedit-dev \
+    libfuse-dev \
+    libgmp-dev \
+    libgmp10 \
+    libhwloc-dev \
+    libjson-c-dev \
+    libnl-3-dev \
+    libnuma-dev \
+    libpmi2-0-dev \
+    libsensors-dev \
+    libslurm-dev \
+    libtool \
+    libuv1-dev \
+    libyaml-dev \
+    llvm \
+    llvm-dev \
+    locales \
+    m4 \
+    make \
+    mawk \
+    perl \
+    pkg-config \
+    protobuf-compiler \
+    python3 \
+    python3-dev \
+    python3-pip \
+    python3-setuptools \
+    python3-venv \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
+    echo 'LANG="en_US.UTF-8"' > /etc/default/locale && \
+    dpkg-reconfigure --frontend=noninteractive locales && \
+    update-locale LANG=en_US.UTF-8
+
+RUN git config --global user.email "noreply@example.com" && \
+    git config --global user.name "Chapel HPE Cray EX user"
+
+FROM chapel-runtime-base AS cxi-dev
+
+ARG CXI_VERSION=release/shs-13.1.0
+ARG CXI_DRIVER_COMMIT=release/shs-13.1.0
+ARG LIBCXI_COMMIT=release/shs-13.1.0
+ARG MAKE_THREADS=auto
+
+RUN cd /tmp && \
+    git clone --depth 1 --branch "${CXI_VERSION}" \
+        https://github.com/HewlettPackard/shs-cassini-headers.git && \
+    git clone https://github.com/HewlettPackard/shs-libcxi.git && \
+    git clone https://github.com/HewlettPackard/shs-cxi-driver.git && \
+    if [[ -n "${LIBCXI_COMMIT}" ]]; then \
+        git -C /tmp/shs-libcxi checkout "${LIBCXI_COMMIT}"; \
+    else \
+        git -C /tmp/shs-libcxi checkout "${CXI_VERSION}"; \
+    fi && \
+    if [[ -n "${CXI_DRIVER_COMMIT}" ]]; then \
+        git -C /tmp/shs-cxi-driver checkout "${CXI_DRIVER_COMMIT}"; \
+    else \
+        git -C /tmp/shs-cxi-driver checkout "${CXI_VERSION}"; \
+    fi && \
+    mkdir -p /opt/cxi-dev/include/libcxi /usr/share/cassini-headers && \
+    cp -a shs-cassini-headers/include/. /opt/cxi-dev/include/ && \
+    cp -a shs-cassini-headers/share/cassini-headers/. /usr/share/cassini-headers/ && \
+    cp shs-libcxi/include/libcxi.h /opt/cxi-dev/include/libcxi/ && \
+    cp -a shs-cxi-driver/include/. /opt/cxi-dev/include/
+
+RUN cd /tmp/shs-libcxi && \
+    ./autogen.sh && \
+    ./configure --prefix=/opt/cxi-dev CPPFLAGS="-I/opt/cxi-dev/include" && \
+    make_threads="${MAKE_THREADS}" && \
+    if [[ -z "${make_threads}" || "${make_threads}" == "auto" ]]; then \
+        make_threads="$(nproc)"; \
+    fi && \
+    make -j"${make_threads}" && \
+    make install && \
+    rm -rf /tmp/shs-cassini-headers /tmp/shs-libcxi /tmp/shs-cxi-driver
+
+RUN test -f /opt/cxi-dev/include/libcxi/libcxi.h && \
+    test -f /opt/cxi-dev/include/uapi/misc/cxi.h && \
+    test -f /opt/cxi-dev/lib/libcxi.so
+
+FROM chapel-runtime-base AS libfabric-build
+
+ARG LIBFABRIC_VERSION=1.22.0
+ARG MAKE_THREADS=auto
+
+COPY --from=cxi-dev /opt/cxi-dev /opt/cxi-dev
+COPY --from=cxi-dev /usr/share/cassini-headers /usr/share/cassini-headers
+
+ENV LD_LIBRARY_PATH=/opt/cxi-dev/lib
+ENV LIBRARY_PATH=/opt/cxi-dev/lib
+ENV CPATH=/opt/cxi-dev/include
+ENV PKG_CONFIG_PATH=/opt/cxi-dev/lib/pkgconfig
+
+RUN git clone --depth 1 --branch "v${LIBFABRIC_VERSION}" \
+    https://github.com/ofiwg/libfabric.git /tmp/libfabric
+
+RUN cd /tmp/libfabric && \
+    sed -i '/^# Stand-alone srun tests for hardware testing environment$/,/^if HAVE_CRITERION$/{ /^if HAVE_CRITERION$/!d; }' prov/cxi/Makefile.include && \
+    ./autogen.sh && \
+    ./configure \
+        --prefix=/opt/libfabric \
+        --disable-static \
+        --enable-cxi=/opt/cxi-dev \
+        CPPFLAGS="-I/opt/cxi-dev/include" \
+        LDFLAGS="-L/opt/cxi-dev/lib -Wl,-rpath,/opt/cxi-dev/lib" \
+        PKG_CONFIG_PATH="/opt/cxi-dev/lib/pkgconfig" && \
+    make_threads="${MAKE_THREADS}" && \
+    if [[ -z "${make_threads}" || "${make_threads}" == "auto" ]]; then \
+        make_threads="$(nproc)"; \
+    fi && \
+    make -j"${make_threads}" install && \
+    rm -rf /tmp/libfabric
+
+RUN test -f /opt/libfabric/include/rdma/fi_cxi_ext.h && \
+    test -f /opt/libfabric/lib/libfabric.so && \
+    PKG_CONFIG_PATH=/opt/libfabric/lib/pkgconfig pkg-config --libs --static libfabric | grep -q -- '-lcxi'
+
+FROM chapel-runtime-base AS chapel-hpe-cray-ex-build
+
+ARG MAKE_THREADS=auto
+ARG CHAPEL_VERSION=2.8.0
+
+ENV CHPL_HOME=/opt/chapel
+WORKDIR ${CHPL_HOME}
+
+COPY --from=cxi-dev /opt/cxi-dev /opt/cxi-dev
+COPY --from=cxi-dev /usr/share/cassini-headers /usr/share/cassini-headers
+COPY --from=libfabric-build /opt/libfabric /opt/libfabric
+COPY scripts/chapel-test-compile /usr/local/bin/chapel-test-compile
+
+RUN chmod +x /usr/local/bin/chapel-test-compile
+
+ENV LANG=en_US.UTF-8
+ENV PATH=/opt/libfabric/bin:${CHPL_HOME}/bin/linux64-x86_64:${CHPL_HOME}/util:${PATH}
+ENV LD_LIBRARY_PATH=/opt/libfabric/lib:/opt/cxi-dev/lib
+ENV LIBRARY_PATH=/opt/libfabric/lib:/opt/cxi-dev/lib
+ENV CPATH=/opt/libfabric/include:/opt/cxi-dev/include
+ENV PKG_CONFIG_PATH=/opt/libfabric/lib/pkgconfig:/opt/cxi-dev/lib/pkgconfig
+ENV LIBFABRIC_DIR=/opt/libfabric
+
+RUN git clone --depth 1 --branch "${CHAPEL_VERSION}" https://github.com/chapel-lang/chapel.git . || \
+    (git clone https://github.com/chapel-lang/chapel.git . && git checkout "${CHAPEL_VERSION}")
+
+ENV CHPL_HOST_PLATFORM=linux64 \
+    CHPL_LLVM=system \
+    CHPL_TARGET_COMPILER=llvm \
+    CHPL_TARGET_CPU=none \
+    CHPL_RE2=bundled \
+    CHPL_TASKS=qthreads \
+    CHPL_LIB_PIC=pic \
+    CHPL_UNWIND=none
+
+RUN CHPL_TARGET_PLATFORM=hpe-cray-ex \
+    CHPL_COMM=ofi \
+    CHPL_LIBFABRIC=system \
+    CHPL_COMM_OFI_OOB=pmi2 \
+    CHPL_LAUNCHER=slurm-srun \
+    CHPL_LOCAL_MODEL=flat \
+    CHPL_AUX_FILESYS=none \
+    bash -lc 'make_threads="${MAKE_THREADS}"; \
+    if [[ -z "${make_threads}" || "${make_threads}" == "auto" ]]; then \
+        make_threads="$(nproc)"; \
+    fi; \
+    make -j"${make_threads}"'
+
+RUN CHPL_TARGET_PLATFORM=linux64 \
+    CHPL_COMM=none \
+    CHPL_LIBFABRIC=none \
+    CHPL_LAUNCHER=none \
+    bash -lc 'make_threads="${MAKE_THREADS}"; \
+    if [[ -z "${make_threads}" || "${make_threads}" == "auto" ]]; then \
+        make_threads="$(nproc)"; \
+    fi; \
+    python3 -m ensurepip --upgrade 2>/dev/null || true; \
+    make -j"${make_threads}" && \
+    make chapel-py-venv && \
+    make mason'
+
+RUN /usr/local/bin/chapel-test-compile
+
+RUN rm -rf .git && \
+    find build -type f \( -name '*.o' -o -name '*.tmp' \) -delete 2>/dev/null || true
+
+FROM chapel-runtime-base AS chapel-multi-rt-base
+
+ENV CHPL_HOME=/opt/chapel
+ENV PATH=/opt/libfabric/bin:/opt/chapel/bin/linux64-x86_64:/opt/chapel/util:${PATH}
+ENV LD_LIBRARY_PATH=/opt/libfabric/lib:/opt/cxi-dev/lib
+ENV LIBRARY_PATH=/opt/libfabric/lib:/opt/cxi-dev/lib
+ENV CPATH=/opt/libfabric/include:/opt/cxi-dev/include
+ENV PKG_CONFIG_PATH=/opt/libfabric/lib/pkgconfig:/opt/cxi-dev/lib/pkgconfig
+ENV PYTHONPATH=/opt/chapel/third-party/chpl-venv/install/chpl-frontend-py-deps:/opt/chapel/third-party/chpl-venv/install/chpldeps
+ENV LIBFABRIC_DIR=/opt/libfabric
+ENV CHPL_HOST_PLATFORM=linux64
+ENV CHPL_LLVM=system
+ENV CHPL_TARGET_COMPILER=llvm
+ENV CHPL_TARGET_CPU=none
+ENV CHPL_RE2=bundled
+ENV CHPL_TASKS=qthreads
+ENV CHPL_LIB_PIC=pic
+ENV CHPL_UNWIND=none
+ENV CHPL_TARGET_PLATFORM=hpe-cray-ex
+ENV CHPL_COMM=ofi
+ENV CHPL_LIBFABRIC=system
+ENV CHPL_COMM_OFI_OOB=pmi2
+ENV CHPL_LAUNCHER=slurm-srun
+ENV CHPL_LOCAL_MODEL=flat
+ENV CHPL_AUX_FILESYS=none
+ENV CHPL_RT_COMM_OFI_PROVIDER=cxi
+ENV CHPL_RT_COMM_OFI_OOB=pmi2
+ENV CHPL_RT_MAX_HEAP_SIZE=70%
+ENV CHPL_RT_COMM_OFI_DEDICATED_AMH_CORES=true
+ENV FI_PROVIDER=cxi
+ENV FI_LOG_LEVEL=warn
+
+COPY --from=cxi-dev /opt/cxi-dev /opt/cxi-dev
+COPY --from=cxi-dev /usr/share/cassini-headers /usr/share/cassini-headers
+COPY --from=libfabric-build /opt/libfabric /opt/libfabric
+COPY --from=chapel-hpe-cray-ex-build /opt/chapel /opt/chapel
+COPY scripts/chapel-start /usr/local/bin/chapel-start
+COPY scripts/chapel-test-compile /usr/local/bin/chapel-test-compile
+COPY scripts/chapel-validate-hpe-ex /usr/local/bin/chapel-validate-hpe-ex
+
+RUN chmod +x /usr/local/bin/chapel-start \
+             /usr/local/bin/chapel-test-compile \
+             /usr/local/bin/chapel-validate-hpe-ex && \
+    mkdir -p /var/log/chapel /tmp/chapel /run/chapel && \
+    chmod 755 /var/log/chapel /tmp/chapel /run/chapel
+
+WORKDIR /opt/chapel
+
+CMD ["/usr/local/bin/chapel-start"]
+
+FROM chapel-multi-rt-base AS chapel-hpe-cray-ex
