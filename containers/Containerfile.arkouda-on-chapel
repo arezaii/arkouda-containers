@@ -6,10 +6,10 @@
 # ================================================================================
 
 # Build arguments for version control
-ARG CHAPEL_BASE_IMAGE=localhost/chapel-2.8.0-libfabric-2.3.1-cxi:latest
+ARG CHAPEL_BASE_IMAGE=localhost/chapel-2.9.0-libfabric-2.3.1-cxi-pic:latest
 ARG LIBICONV_VERSION=1.17
 ARG ARROW_VERSION=19.0.1-1
-ARG ARKOUDA_VERSION=2026.02.27
+ARG ARKOUDA_VERSION=2026.07.15
 
 # ========================================
 # Stage 1: Arkouda Builder
@@ -20,7 +20,7 @@ FROM ${CHAPEL_BASE_IMAGE} AS arkouda-builder
 # Re-declare build arguments for this stage
 ARG LIBICONV_VERSION=1.17
 ARG ARROW_VERSION=19.0.1-1
-ARG ARKOUDA_VERSION=2026.02.27
+ARG ARKOUDA_VERSION=2026.07.15
 
 # Install additional packages needed for Arkouda that may not be in Chapel base
 RUN apt-get update && apt-get install -y \
@@ -135,7 +135,7 @@ RUN cd /opt/arkouda && \
 FROM ${CHAPEL_BASE_IMAGE} AS runtime
 
 # Re-declare build argument for this stage
-ARG ARKOUDA_VERSION=2026.02.27
+ARG ARKOUDA_VERSION=2026.07.15
 ARG ARROW_VERSION=19.0.1-1
 
 # Copy built Arkouda binaries and Python environment

@@ -5,33 +5,36 @@
 # - chapel-hpe-cray-ex:dev
 #
 # It keeps the Debian bookworm base and the dual-runtime Chapel build shape:
-# - HPE Cray EX target runtime using libfabric 1.22.0 with CXI support
+# - HPE Cray EX target runtime using libfabric 2.3.1 with CXI support
 # - Standard linux64 target runtime using CHPL_COMM=none
 
 FROM debian:bookworm-slim AS chapel-runtime-base
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-ARG DEBIAN_FRONTEND=noninteractive
+ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl && \
+    curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key > /etc/apt/trusted.gpg.d/apt.llvm.org.asc && \
+    echo 'deb http://apt.llvm.org/bookworm/ llvm-toolchain-bookworm-22 main' > /etc/apt/sources.list.d/llvm.list && \
+    apt-get update && apt-get install -y --no-install-recommends \
     autoconf \
     automake \
     bash \
     bison \
     build-essential \
-    ca-certificates \
-    clang \
+    clang-22 \
     cmake \
-    curl \
     file \
     flex \
     g++ \
     gcc \
     gfortran \
     git \
-    libclang-cpp-dev \
-    libclang-dev \
+    libclang-22-dev \
+    libclang-cpp22-dev \
     libconfig-dev \
     libcurl4-openssl-dev \
     libedit-dev \
@@ -48,8 +51,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libtool \
     libuv1-dev \
     libyaml-dev \
-    llvm \
-    llvm-dev \
     locales \
     m4 \
     make \
@@ -62,7 +63,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pip \
     python3-setuptools \
     python3-venv \
+    ripgrep \
+    llvm-22 \
+    llvm-22-dev \
     wget \
+    && update-alternatives --install /usr/bin/clang clang /usr/bin/clang-22 220 \
+    && update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-22 220 \
+    && update-alternatives --install /usr/bin/llvm-config llvm-config /usr/bin/llvm-config-22 220 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
@@ -118,7 +125,7 @@ RUN test -f /opt/cxi-dev/include/libcxi/libcxi.h && \
 
 FROM chapel-runtime-base AS libfabric-build
 
-ARG LIBFABRIC_VERSION=1.22.0
+ARG LIBFABRIC_VERSION=2.3.1
 ARG MAKE_THREADS=auto
 
 COPY --from=cxi-dev /opt/cxi-dev /opt/cxi-dev
@@ -156,7 +163,7 @@ RUN test -f /opt/libfabric/include/rdma/fi_cxi_ext.h && \
 FROM chapel-runtime-base AS chapel-hpe-cray-ex-build
 
 ARG MAKE_THREADS=auto
-ARG CHAPEL_VERSION=2.8.0
+ARG CHAPEL_VERSION=2.9.0
 
 ENV CHPL_HOME=/opt/chapel
 WORKDIR ${CHPL_HOME}
@@ -193,7 +200,7 @@ RUN CHPL_TARGET_PLATFORM=hpe-cray-ex \
     CHPL_LIBFABRIC=system \
     CHPL_COMM_OFI_OOB=pmi2 \
     CHPL_LAUNCHER=slurm-srun \
-    CHPL_LOCAL_MODEL=flat \
+    CHPL_LOCALE_MODEL=flat \
     CHPL_AUX_FILESYS=none \
     bash -lc 'make_threads="${MAKE_THREADS}"; \
     if [[ -z "${make_threads}" || "${make_threads}" == "auto" ]]; then \
@@ -242,7 +249,7 @@ ENV CHPL_COMM=ofi
 ENV CHPL_LIBFABRIC=system
 ENV CHPL_COMM_OFI_OOB=pmi2
 ENV CHPL_LAUNCHER=slurm-srun
-ENV CHPL_LOCAL_MODEL=flat
+ENV CHPL_LOCALE_MODEL=flat
 ENV CHPL_AUX_FILESYS=none
 ENV CHPL_RT_COMM_OFI_PROVIDER=cxi
 ENV CHPL_RT_COMM_OFI_OOB=pmi2

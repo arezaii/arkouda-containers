@@ -6,8 +6,8 @@
 set -e
 
 # Default values
-CHAPEL_BASE_IMAGE="arezaiihpe/chapel-2.8.0-libfabric-2.3.1-cxi:latest"
-ARKOUDA_VERSION="2026.02.27"
+CHAPEL_BASE_IMAGE="localhost/chapel-2.9.0-libfabric-2.3.1-cxi-pic:latest"
+ARKOUDA_VERSION="2026.07.15"
 LIBICONV_VERSION="1.17"
 ARROW_VERSION="19.0.1-1"
 IMAGE_TAG=""
@@ -206,7 +206,7 @@ BUILD_EXIT_CODE=${PIPESTATUS[0]}
 
 echo
 if [ $BUILD_EXIT_CODE -eq 0 ]; then
-    log_with_timestamp "✅ Build completed successfully!"
+    log_with_timestamp "Build completed successfully!"
     echo "Image tagged as: ${IMAGE_TAG}"
     echo "Build log saved to: ${LOG_PATH}"
     echo
@@ -218,9 +218,9 @@ if [ $BUILD_EXIT_CODE -eq 0 ]; then
     echo "  ${DOCKER_CMD} run -it ${IMAGE_TAG} bash -c '\${ARKOUDA_HOME}/arkouda_server -nl 1'"
     echo
 else
-    log_with_timestamp "❌ Build failed with exit code: $BUILD_EXIT_CODE"
+    log_with_timestamp "Build failed with exit code: $BUILD_EXIT_CODE"
     echo
-    echo "🔍 ERROR ANALYSIS:"
+    echo " ERROR ANALYSIS:"
     echo "=================="
     echo "Build log location: ${LOG_PATH}"
     echo
@@ -228,32 +228,32 @@ else
     echo "------------------------------"
     tail -20 "${LOG_PATH}" | sed 's/^/  /'
     echo
-    echo "🔍 Checking for common issues..."
+    echo " Checking for common issues..."
 
     # Check for specific error patterns
     if grep -q "No such file or directory" "${LOG_PATH}"; then
-        echo "❌ Missing files detected - check file paths and COPY instructions"
+        echo "Missing files detected - check file paths and COPY instructions"
     fi
 
     if grep -q "Failed to solve" "${LOG_PATH}"; then
-        echo "❌ Docker build context issues detected"
+        echo "Docker build context issues detected"
     fi
 
     if grep -q "base image" "${LOG_PATH}" || grep -q "pull access denied" "${LOG_PATH}"; then
-        echo "❌ Base image issues detected - verify Chapel base image exists:"
+        echo "Base image issues detected - verify Chapel base image exists:"
         echo "   ${DOCKER_CMD} image ls | grep chapel"
     fi
 
     if grep -q "E: Unable to locate package" "${LOG_PATH}"; then
-        echo "❌ Package installation issues detected - check apt package names"
+        echo "Package installation issues detected - check apt package names"
     fi
 
     if grep -q "fatal: unable to access" "${LOG_PATH}" || grep -q "git clone" "${LOG_PATH}"; then
-        echo "❌ Git access issues detected - check network connectivity and repository URLs"
+        echo "Git access issues detected - check network connectivity and repository URLs"
     fi
 
     if grep -q "make.*error" "${LOG_PATH}" || grep -q "compilation.*failed" "${LOG_PATH}"; then
-        echo "❌ Compilation errors detected - check build dependencies and source code"
+        echo "Compilation errors detected - check build dependencies and source code"
     fi
 
     echo
