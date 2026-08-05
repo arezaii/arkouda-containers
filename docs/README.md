@@ -110,7 +110,7 @@ and writes a timestamped log to `build-logs/`.
 | `-t, --tag` | `arkouda-on-chapel-<version>-cxi:latest` | Output image tag |
 | `-a, --build-arg` | — | Extra `--build-arg`, repeatable |
 | `-d, --docker-cmd` | `docker` | Use `podman` instead if preferred |
-| `-V, --verbose` | `false` | Stream full build output |
+| `-V, --verbose` | `false` | Stream full build output, useful for docker builds |
 
 The script verifies the Chapel base image exists and exposes the Python
 `chapel` module before building, and writes a timestamped log to
