@@ -115,12 +115,12 @@ RUN --mount=type=secret,id=corp_ca,target=/tmp/corp-ca.crt,required=false \
         https://github.com/HewlettPackard/shs-cassini-headers.git && \
     git clone https://github.com/HewlettPackard/shs-libcxi.git && \
     git clone https://github.com/HewlettPackard/shs-cxi-driver.git && \
-    if [[ -n "${LIBCXI_COMMIT}" ]]; then \
+    if [ -n "${LIBCXI_COMMIT}" ]; then \
         git -C /tmp/shs-libcxi checkout "${LIBCXI_COMMIT}"; \
     else \
         git -C /tmp/shs-libcxi checkout "${CXI_VERSION}"; \
     fi && \
-    if [[ -n "${CXI_DRIVER_COMMIT}" ]]; then \
+    if [ -n "${CXI_DRIVER_COMMIT}" ]; then \
         git -C /tmp/shs-cxi-driver checkout "${CXI_DRIVER_COMMIT}"; \
     else \
         git -C /tmp/shs-cxi-driver checkout "${CXI_VERSION}"; \
@@ -136,7 +136,7 @@ RUN cd /tmp/shs-libcxi && \
     ./autogen.sh && \
     ./configure --prefix=/opt/cxi-dev CPPFLAGS="-I/opt/cxi-dev/include" && \
     make_threads="${MAKE_THREADS}" && \
-    if [[ -z "${make_threads}" || "${make_threads}" == "auto" ]]; then \
+    if [ -z "${make_threads}" ] || [ "${make_threads}" = "auto" ]; then \
         make_threads="$(nproc)"; \
     fi && \
     make -j"${make_threads}" && \
@@ -180,7 +180,7 @@ RUN cd /tmp/libfabric && \
         LDFLAGS="-L/opt/cxi-dev/lib -Wl,-rpath,/opt/cxi-dev/lib" \
         PKG_CONFIG_PATH="/opt/cxi-dev/lib/pkgconfig" && \
     make_threads="${MAKE_THREADS}" && \
-    if [[ -z "${make_threads}" || "${make_threads}" == "auto" ]]; then \
+    if [ -z "${make_threads}" ] || [ "${make_threads}" = "auto" ]; then \
         make_threads="$(nproc)"; \
     fi && \
     make -j"${make_threads}" install && \
