@@ -1,13 +1,7 @@
 # syntax=docker/dockerfile:1
-# Recovered Containerfile for the lost Debian-based Chapel multi-runtime base.
-#
-# This file is meant to reproduce the lineage behind the local image tagged as:
-# - arezaiihpe/chapel-mutli-rt-base:2.8.0
-# - chapel-hpe-cray-ex:dev
-#
-# It keeps the Debian bookworm base and the dual-runtime Chapel build shape:
+# A Debian bookworm base and dual-runtime Chapel build:
 # - HPE Cray EX target runtime using libfabric 2.3.1 with CXI support
-# - Standard linux64 target runtime using CHPL_COMM=none
+# - Standard linux64 target runtime using CHPL_COMM=none, supports mason
 #
 # Corporate/intercepting-proxy root CA support:
 # Some networks (e.g. behind a TLS-inspecting proxy) present a certificate
@@ -267,6 +261,15 @@ RUN rm -rf .git && \
 
 FROM chapel-runtime-base AS chapel-multi-rt-base
 
+# Re-declare the component build args so their values can be captured in the
+# LABEL metadata below - each defaults to the same value used to build the
+# corresponding cxi-dev/libfabric-build/chapel-hpe-cray-ex-build stage.
+ARG CXI_VERSION=release/shs-13.1.0
+ARG CXI_DRIVER_COMMIT=3233be5
+ARG LIBCXI_COMMIT=ebd57a9
+ARG LIBFABRIC_VERSION=2.3.1
+ARG CHAPEL_VERSION=2.9.0
+
 ENV CHPL_HOME=/opt/chapel
 ENV PATH=/opt/libfabric/bin:/opt/chapel/bin/linux64-x86_64:/opt/chapel/util:${PATH}
 ENV LD_LIBRARY_PATH=/opt/libfabric/lib:/opt/cxi-dev/lib
@@ -314,5 +317,16 @@ RUN chmod +x /usr/local/bin/chapel-start \
 WORKDIR /opt/chapel
 
 CMD ["/usr/local/bin/chapel-start"]
+
+# Metadata capturing the actual component versions/commits this image was
+# built from
+LABEL org.opencontainers.image.title="chapel-hpe-cray-ex-chapel-pic" \
+      org.opencontainers.image.description="Debian bookworm Chapel image with dual hpe-cray-ex (OFI/CXI) and linux64 runtimes" \
+      chapel.version="${CHAPEL_VERSION}" \
+      chapel.runtimes="hpe-cray-ex,linux64" \
+      libfabric.version="${LIBFABRIC_VERSION}" \
+      cxi.version="${CXI_VERSION}" \
+      cxi.driver_commit="${CXI_DRIVER_COMMIT}" \
+      cxi.libcxi_commit="${LIBCXI_COMMIT}"
 
 FROM chapel-multi-rt-base AS chapel-hpe-cray-ex

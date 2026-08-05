@@ -1,8 +1,9 @@
 # Containerfile for Arkouda built on pre-built Chapel container
-# Uses chapel:hpe-cray-ex-main as base (contains both hpe-cray-ex and linux64 runtimes)
+# Uses image built from sibling Containerfile.hpe-cray-ex-chapel-pic as base 
+# (contains both hpe-cray-ex and linux64 runtimes)
 # The Chapel base is expected to carry the same CXI-enabled libfabric path that
-# produces a fast image: public HPE CXI headers, libcxi, and
-# /opt/libfabric built with --enable-cxi.
+# produces a CXI aware image: public HPE CXI headers, libcxi, and
+# libfabric built with --enable-cxi.
 # ================================================================================
 
 # Build arguments for version control
@@ -149,7 +150,8 @@ ENV CPATH=/usr/local/include:${CPATH}
 ENV ARKOUDA_ZMQ_PATH=/usr/lib/x86_64-linux-gnu
 ENV ARKOUDA_HDF5_PATH=/usr/lib/x86_64-linux-gnu/hdf5/serial
 
-# Build Arkouda with HPE-Cray-EX configuration
+# Build Arkouda with multi-dimensional array configuration and large maximum
+# Chapel instantiations
 # Chapel environment variables are inherited from the base image
 # Parquet is always enabled for this build
 RUN cd /opt/arkouda && \
@@ -164,9 +166,12 @@ RUN cd /opt/arkouda && \
 # ========================================
 FROM ${CHAPEL_BASE_IMAGE} AS runtime
 
-# Re-declare build argument for this stage
+# Re-declare build arguments for this stage (also needed to capture their
+# values in the LABEL metadata below)
+ARG CHAPEL_BASE_IMAGE
 ARG ARKOUDA_VERSION=2026.07.15
 ARG ARROW_VERSION=19.0.1-1
+ARG LIBICONV_VERSION=1.17
 
 # Copy built Arkouda binaries and Python environment
 COPY --from=arkouda-builder /opt/arkouda /opt/arkouda
@@ -261,7 +266,11 @@ WORKDIR /opt/arkouda
 # Default command
 CMD ["/bin/bash"]
 
-# Add metadata labels
-LABEL description="Arkouda built on pre-built Chapel container with HPE-Cray-EX + CXI support"
-LABEL arkouda.version="${ARKOUDA_VERSION}"
-LABEL arkouda.runtime="hpe-cray-ex-ofi-cxi"
+# Metadata capturing the actual build-arg values this image was built from
+LABEL org.opencontainers.image.title="arkouda-on-chapel" \
+      org.opencontainers.image.description="Arkouda built on a Chapel container with HPE-Cray-EX + CXI support" \
+      arkouda.version="${ARKOUDA_VERSION}" \
+      arkouda.runtime="hpe-cray-ex-ofi-cxi" \
+      arkouda.chapel_base_image="${CHAPEL_BASE_IMAGE}" \
+      arkouda.arrow_version="${ARROW_VERSION}" \
+      arkouda.libiconv_version="${LIBICONV_VERSION}"
