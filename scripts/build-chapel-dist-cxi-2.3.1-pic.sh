@@ -4,29 +4,22 @@
 set -e
 set -o pipefail
 
-# Get the directory where this script is located
+# Get the directory where this script is located, and resolve the repo root
+# (build context for both target Containerfiles is always the repo root).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 CONVERT_SCRIPT="${SCRIPT_DIR}/convert-to-sif.sh"
 
 # Version configurations (can be overridden with environment variables)
 LIBFABRIC_VERSION=${LIBFABRIC_VERSION:-2.3.1}
-SLURM_VERSION=${SLURM_VERSION:-25.05.3}
 CHAPEL_VERSION=${CHAPEL_VERSION:-2.9.0}
 CXI_VERSION=${CXI_VERSION:-release/shs-13.1.0}
 CXI_DRIVER_COMMIT=${CXI_DRIVER_COMMIT:-3233be5}
 LIBCXI_COMMIT=${LIBCXI_COMMIT:-ebd57a9}
 
-# Build mode: "development" (fast iteration) or "production" (optimized)
-BUILD_MODE=${BUILD_MODE:-production}
-
 # Configuration
-# Append build mode to container name if in development mode
-if [ "${BUILD_MODE}" = "development" ]; then
-    CONTAINER_NAME="chapel-${CHAPEL_VERSION}-libfabric-${LIBFABRIC_VERSION}-cxi-pic-dev"
-else
-    CONTAINER_NAME="chapel-${CHAPEL_VERSION}-libfabric-${LIBFABRIC_VERSION}-cxi-pic"
-fi
-CONTAINERFILE="Containerfile.hpe-cray-ex-chapel-pic"
+CONTAINER_NAME="chapel-${CHAPEL_VERSION}-libfabric-${LIBFABRIC_VERSION}-cxi-pic"
+CONTAINERFILE="containers/Containerfile.hpe-cray-ex-chapel-pic"
 PODMAN_IMAGE="localhost/${CONTAINER_NAME}:latest"
 OUTPUT_SIF="${CONTAINER_NAME}.sif"
 
@@ -34,20 +27,20 @@ OUTPUT_SIF="${CONTAINER_NAME}.sif"
 echo "Building Chapel-Arkouda server container with CXI provider support..."
 echo ""
 
+cd "$REPO_ROOT"
+
 if [ ! -f "$CONTAINERFILE" ]; then
     echo "ERROR: $CONTAINERFILE not found"
     exit 1
 fi
 
-# Copy patches/ and configs/ to context
-cp -r $SCRIPT_DIR/../patches .
-cp -r $SCRIPT_DIR/../configs .
-mkdir -p ./scripts/
-cp $SCRIPT_DIR/../scripts/startup-slurm-for-container.sh ./scripts/.
-cp $SCRIPT_DIR/../scripts/slurm-start.sh ./scripts/.
+# NOTE: $CONTAINERFILE only COPYs scripts/chapel-start, scripts/chapel-test-compile,
+# and scripts/chapel-validate-hpe-ex, all of which live in the top-level scripts/
+# directory. The build context is the repo root, so no other files need to be
+# staged - COPY paths inside the Containerfile resolve relative to $REPO_ROOT.
 
 # Create build log directory
-BUILD_LOG_DIR="${PWD}/build-logs"
+BUILD_LOG_DIR="${REPO_ROOT}/build-logs"
 mkdir -p "$BUILD_LOG_DIR"
 BUILD_LOG="${BUILD_LOG_DIR}/cxi-build-$(date +%Y%m%d_%H%M%S).log"
 
@@ -68,31 +61,35 @@ echo ""
 
 # Build with Podman
 echo "Building with versions:" | tee -a "$BUILD_LOG"
-echo "  Build Mode=${BUILD_MODE}" | tee -a "$BUILD_LOG"
 echo "  CHPL_TARGET_CPU=none" | tee -a "$BUILD_LOG"
 echo "  libfabric=${LIBFABRIC_VERSION}" | tee -a "$BUILD_LOG"
-echo "  SLURM=${SLURM_VERSION}" | tee -a "$BUILD_LOG"
 echo "  Chapel=${CHAPEL_VERSION}" | tee -a "$BUILD_LOG"
 echo "  CXI Version=${CXI_VERSION}" | tee -a "$BUILD_LOG"
 echo "  CXI Driver Commit=${CXI_DRIVER_COMMIT}" | tee -a "$BUILD_LOG"
 echo "  CXI libcxi Commit=${LIBCXI_COMMIT}" | tee -a "$BUILD_LOG"
 echo "" | tee -a "$BUILD_LOG"
-if [ "${BUILD_MODE}" = "development" ]; then
-    echo "==> DEVELOPMENT BUILD: Quick compile, single-dim arrays, CHPL_LLVM=system" | tee -a "$BUILD_LOG"
-else
-    echo "==> PRODUCTION BUILD: Optimized compile, 3D arrays, CHPL_LLVM=system" | tee -a "$BUILD_LOG"
+
+# Optional: on networks behind a TLS-inspecting proxy, set CORP_CA_FILE to the
+# path of the corporate/internal root CA (PEM). It is passed in as a BuildKit
+# secret and is only mounted into the specific RUN steps that need it during
+# the build - it is never copied into the image or committed to any layer.
+SECRET_ARGS=()
+if [ -n "${CORP_CA_FILE:-}" ]; then
+    if [ ! -f "$CORP_CA_FILE" ]; then
+        echo "ERROR: CORP_CA_FILE is set but not found: $CORP_CA_FILE"
+        exit 1
+    fi
+    echo "Using corporate root CA from CORP_CA_FILE=${CORP_CA_FILE} (build-time only)" | tee -a "$BUILD_LOG"
+    SECRET_ARGS=(--secret "id=corp_ca,src=${CORP_CA_FILE}")
 fi
-echo "" | tee -a "$BUILD_LOG"
 
 docker build --progress plain -t "$PODMAN_IMAGE" -f "$CONTAINERFILE" \
-    --build-arg NCPUS=$(nproc) \
-    --build-arg BUILD_MODE="$BUILD_MODE" \
     --build-arg LIBFABRIC_VERSION="$LIBFABRIC_VERSION" \
-    --build-arg SLURM_VERSION="$SLURM_VERSION" \
     --build-arg CHAPEL_VERSION="$CHAPEL_VERSION" \
     --build-arg CXI_VERSION="$CXI_VERSION" \
     --build-arg CXI_DRIVER_COMMIT="$CXI_DRIVER_COMMIT" \
     --build-arg LIBCXI_COMMIT="$LIBCXI_COMMIT" \
+    "${SECRET_ARGS[@]}" \
     . 2>&1 | tee -a "$BUILD_LOG"
 
 BUILD_EXIT_CODE=$?
@@ -102,8 +99,6 @@ if [ $BUILD_EXIT_CODE -ne 0 ]; then
     echo "Podman build failed with exit code: $BUILD_EXIT_CODE" | tee -a "$BUILD_LOG"
     exit 1
 fi
-
-rm -rf $SCRIPT_DIR/../containers/patches $SCRIPT_DIR/../containers/configs
 
 # Convert to SIF using shared conversion script
 # echo "Converting to SIF format using convert-to-sif.sh..." | tee -a "$BUILD_LOG"

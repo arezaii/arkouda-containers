@@ -5,6 +5,11 @@
 
 set -e
 
+# Resolve the repo root regardless of the caller's cwd (build context for
+# both target Containerfiles is always the repo root).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONTAINER_DIR="$(dirname "$SCRIPT_DIR")"
+
 # Default values
 CHAPEL_BASE_IMAGE="localhost/chapel-2.9.0-libfabric-2.3.1-cxi-pic:latest"
 ARKOUDA_VERSION="2026.07.15"
@@ -107,7 +112,7 @@ done
 
 # Auto-generate image tag if not set
 if [[ -z "${IMAGE_TAG}" ]]; then
-    IMAGE_TAG="chapel-2.8.0-arkouda-${ARKOUDA_VERSION}-cxi:latest"
+    IMAGE_TAG="arkouda-on-chapel-${ARKOUDA_VERSION}-cxi:latest"
 fi
 
 # Verify Chapel base image exists
@@ -122,12 +127,13 @@ echo "Checking if Chapel Python bindings are available in base image"
 if ! ${DOCKER_CMD} run --rm "${CHAPEL_BASE_IMAGE}" \
     bash -lc 'python3 -c "import chapel"' >/dev/null 2>&1; then
     echo "Error: Chapel base image '${CHAPEL_BASE_IMAGE}' does not expose the Python 'chapel' module."
-    echo "Rebuild the Chapel base image from containers/Containerfile.hpe-cray-ex-chapel or use a newer image tag."
+    echo "Rebuild the Chapel base image with ./scripts/build-chapel-dist-cxi-2.3.1-pic.sh or use a newer image tag."
     exit 1
 fi
 
-# Setup logging
-LOG_PATH="$(pwd)/${LOG_FILE}"
+# Setup logging (always under the shared repo-root build-logs/ directory)
+mkdir -p "${CONTAINER_DIR}/build-logs"
+LOG_PATH="${CONTAINER_DIR}/build-logs/${LOG_FILE}"
 echo "Build log will be written to: ${LOG_PATH}"
 echo
 
@@ -163,10 +169,7 @@ log_with_timestamp "Docker command:     ${DOCKER_CMD}"
 log_with_timestamp "Verbose mode:       ${VERBOSE}"
 echo
 
-# Change to the directory containing the Containerfile
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONTAINER_DIR="$(dirname "$SCRIPT_DIR")"
-
+# Change to the repo root, which is the build context for the Containerfile
 log_with_timestamp "Changing to build directory: ${CONTAINER_DIR}"
 cd "$CONTAINER_DIR"
 
@@ -174,6 +177,20 @@ cd "$CONTAINER_DIR"
 if [ ! -f "containers/Containerfile.arkouda-on-chapel" ]; then
     log_with_timestamp "ERROR: Containerfile not found: containers/Containerfile.arkouda-on-chapel"
     exit 1
+fi
+
+# Optional: on networks behind a TLS-inspecting proxy, set CORP_CA_FILE to the
+# path of the corporate/internal root CA (PEM). It is passed in as a BuildKit/
+# Buildah secret and is only mounted into the specific RUN steps that need it
+# during the build - it is never copied into the image or committed to any layer.
+SECRET_ARGS=""
+if [ -n "${CORP_CA_FILE:-}" ]; then
+    if [ ! -f "$CORP_CA_FILE" ]; then
+        log_with_timestamp "ERROR: CORP_CA_FILE is set but not found: $CORP_CA_FILE"
+        exit 1
+    fi
+    log_with_timestamp "Using corporate root CA from CORP_CA_FILE=${CORP_CA_FILE} (build-time only)"
+    SECRET_ARGS="--secret id=corp_ca,src=${CORP_CA_FILE}"
 fi
 
 # Build the container with comprehensive logging
@@ -185,6 +202,7 @@ BUILD_CMD="${DOCKER_CMD} build \
     --build-arg LIBICONV_VERSION=${LIBICONV_VERSION} \
     --build-arg ARROW_VERSION=${ARROW_VERSION} \
     ${BUILD_ARGS} \
+    ${SECRET_ARGS} \
     --tag ${IMAGE_TAG} \
     ."
 

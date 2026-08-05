@@ -22,13 +22,23 @@ require_absent() {
     fi
 }
 
+require_lib_loadable() {
+    local pattern="$1"
+    local label="$2"
+    if ! ldconfig -p 2>/dev/null | grep -q "${pattern}"; then
+        echo "Missing required library: ${label} (searched via ldconfig for '${pattern}')" >&2
+        exit 1
+    fi
+}
+
 command -v chpl >/dev/null 2>&1 || {
     echo "chpl not found in PATH" >&2
     exit 1
 }
 
 require_path /opt/libfabric/lib/libfabric.so.1
-require_path /opt/slurm-pmi/lib
+# PMI2 comes from the distro's libpmi2-0-dev package (not a bundled /opt tree)
+require_lib_loadable "libpmi2\.so" "PMI2 (libpmi2)"
 
 if [[ -e /opt/cxi-dev/include/libcxi/libcxi.h ]]; then
     require_path /opt/cxi-dev/include/libcxi/libcxi.h

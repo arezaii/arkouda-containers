@@ -23,7 +23,13 @@ ARG ARROW_VERSION=19.0.1-1
 ARG ARKOUDA_VERSION=2026.07.15
 
 # Install additional packages needed for Arkouda that may not be in Chapel base
-RUN apt-get update && apt-get install -y \
+RUN --mount=type=secret,id=corp_ca,target=/tmp/corp-ca.crt,required=false \
+    WGET_CA_OPT=""; \
+    if [ -s /tmp/corp-ca.crt ]; then \
+        cat /etc/ssl/certs/ca-certificates.crt /tmp/corp-ca.crt > /tmp/build-ca-bundle.crt; \
+        WGET_CA_OPT="--ca-certificate=/tmp/build-ca-bundle.crt"; \
+    fi && \
+    apt-get update && apt-get install -y \
     --no-install-recommends \
     apt-transport-https \
     ca-certificates \
@@ -44,7 +50,7 @@ RUN apt-get update && apt-get install -y \
     libcurl4-openssl-dev \
     libssl-dev \
     libre2-dev \
-    && wget -qO /tmp/apache-arrow-apt.deb \
+    && wget ${WGET_CA_OPT:-} -qO /tmp/apache-arrow-apt.deb \
         https://packages.apache.org/artifactory/arrow/debian/apache-arrow-apt-source-latest-$(lsb_release -cs).deb \
     && apt-get install -y /tmp/apache-arrow-apt.deb \
     && apt-get update \
@@ -52,7 +58,7 @@ RUN apt-get update && apt-get install -y \
         --no-install-recommends \
         libarrow-dev=${ARROW_VERSION} \
         libparquet-dev=${ARROW_VERSION} \
-    && rm -f /tmp/apache-arrow-apt.deb \
+    && rm -f /tmp/apache-arrow-apt.deb /tmp/build-ca-bundle.crt \
     && rm -rf /var/lib/apt/lists/*
 
 # Set environment variables
@@ -65,12 +71,18 @@ ENV PATH=${ARKOUDA_VENV}/bin:${PATH}
 ENV VIRTUAL_ENV=${ARKOUDA_VENV}
 
 # Download Arkouda source
-RUN cd /opt && \
+RUN --mount=type=secret,id=corp_ca,target=/tmp/corp-ca.crt,required=false \
+    if [ -s /tmp/corp-ca.crt ]; then \
+        cat /etc/ssl/certs/ca-certificates.crt /tmp/corp-ca.crt > /tmp/build-ca-bundle.crt; \
+        export GIT_SSL_CAINFO=/tmp/build-ca-bundle.crt CURL_CA_BUNDLE=/tmp/build-ca-bundle.crt; \
+    fi && \
+    cd /opt && \
     arkouda_ref="${ARKOUDA_VERSION}" && \
     if echo "${ARKOUDA_VERSION}" | grep -Eq '^[0-9]{4}\.[0-9]{2}\.[0-9]{2}$'; then \
         arkouda_ref="v${ARKOUDA_VERSION}"; \
     fi && \
-    git clone --depth 1 --branch "${arkouda_ref}" https://github.com/Bears-R-Us/arkouda.git
+    git clone --depth 1 --branch "${arkouda_ref}" https://github.com/Bears-R-Us/arkouda.git && \
+    rm -f /tmp/build-ca-bundle.crt
 
 # Copy patches directory (may be empty, that's OK)
 COPY patches/ /tmp/patches/
@@ -90,25 +102,43 @@ RUN if [ "${ARKOUDA_VERSION}" = "2025.09.30" ]; then \
     fi
 
 # Install build dependencies needed for pyproject.toml parsing
-RUN ${ARKOUDA_VENV}/bin/pip install --no-cache-dir \
+RUN --mount=type=secret,id=corp_ca,target=/tmp/corp-ca.crt,required=false \
+    if [ -s /tmp/corp-ca.crt ]; then \
+        cat /etc/ssl/certs/ca-certificates.crt /tmp/corp-ca.crt > /tmp/build-ca-bundle.crt; \
+        export PIP_CERT=/tmp/build-ca-bundle.crt; \
+    fi && \
+    ${ARKOUDA_VENV}/bin/pip install --no-cache-dir \
     setuptools>=64 \
     wheel \
-    versioneer[toml]>=0.22
+    versioneer[toml]>=0.22 && \
+    rm -f /tmp/build-ca-bundle.crt
 
 # Install Arkouda's runtime dependencies using its own pyproject.toml
-RUN cd /opt/arkouda && \
-    ${ARKOUDA_VENV}/bin/pip install --no-cache-dir -e .[dev]
+RUN --mount=type=secret,id=corp_ca,target=/tmp/corp-ca.crt,required=false \
+    if [ -s /tmp/corp-ca.crt ]; then \
+        cat /etc/ssl/certs/ca-certificates.crt /tmp/corp-ca.crt > /tmp/build-ca-bundle.crt; \
+        export PIP_CERT=/tmp/build-ca-bundle.crt; \
+    fi && \
+    cd /opt/arkouda && \
+    ${ARKOUDA_VENV}/bin/pip install --no-cache-dir -e .[dev] && \
+    rm -f /tmp/build-ca-bundle.crt
 
 # Build GNU libiconv from source - required for Arkouda
-RUN cd /tmp && \
-    wget https://ftp.gnu.org/pub/gnu/libiconv/libiconv-${LIBICONV_VERSION}.tar.gz && \
+RUN --mount=type=secret,id=corp_ca,target=/tmp/corp-ca.crt,required=false \
+    WGET_CA_OPT=""; \
+    if [ -s /tmp/corp-ca.crt ]; then \
+        cat /etc/ssl/certs/ca-certificates.crt /tmp/corp-ca.crt > /tmp/build-ca-bundle.crt; \
+        WGET_CA_OPT="--ca-certificate=/tmp/build-ca-bundle.crt"; \
+    fi && \
+    cd /tmp && \
+    wget ${WGET_CA_OPT:-} https://ftp.gnu.org/pub/gnu/libiconv/libiconv-${LIBICONV_VERSION}.tar.gz && \
     tar --no-same-owner -xzf libiconv-${LIBICONV_VERSION}.tar.gz && \
     cd libiconv-${LIBICONV_VERSION} && \
     ./configure --prefix=/usr/local --enable-shared --enable-static && \
     make -j$(nproc) && \
     make install && \
     ldconfig && \
-    rm -rf /tmp/libiconv-${LIBICONV_VERSION} /tmp/libiconv-${LIBICONV_VERSION}.tar.gz
+    rm -rf /tmp/libiconv-${LIBICONV_VERSION} /tmp/libiconv-${LIBICONV_VERSION}.tar.gz /tmp/build-ca-bundle.crt
 
 # Update library paths to include libiconv
 ENV LD_LIBRARY_PATH=/usr/local/lib:${LD_LIBRARY_PATH}
@@ -146,14 +176,20 @@ COPY --from=arkouda-builder /opt/arkouda-venv /opt/arkouda-venv
 COPY --from=arkouda-builder /usr/local/lib/libiconv* /usr/local/lib/
 COPY --from=arkouda-builder /usr/local/lib/libcharset* /usr/local/lib/
 
-RUN apt-get update && apt-get install -y \
+RUN --mount=type=secret,id=corp_ca,target=/tmp/corp-ca.crt,required=false \
+    WGET_CA_OPT=""; \
+    if [ -s /tmp/corp-ca.crt ]; then \
+        cat /etc/ssl/certs/ca-certificates.crt /tmp/corp-ca.crt > /tmp/build-ca-bundle.crt; \
+        WGET_CA_OPT="--ca-certificate=/tmp/build-ca-bundle.crt"; \
+    fi && \
+    apt-get update && apt-get install -y \
     --no-install-recommends \
     apt-transport-https \
     ca-certificates \
     gnupg \
     lsb-release \
     wget \
-    && wget -qO /tmp/apache-arrow-apt.deb \
+    && wget ${WGET_CA_OPT:-} -qO /tmp/apache-arrow-apt.deb \
         https://packages.apache.org/artifactory/arrow/debian/apache-arrow-apt-source-latest-$(lsb_release -cs).deb \
     && apt-get install -y /tmp/apache-arrow-apt.deb \
     && apt-get update \
@@ -171,7 +207,7 @@ RUN apt-get update && apt-get install -y \
         libssl-dev \
         munge \
         slurm-wlm \
-    && rm -f /tmp/apache-arrow-apt.deb \
+    && rm -f /tmp/apache-arrow-apt.deb /tmp/build-ca-bundle.crt \
     && rm -rf /var/lib/apt/lists/*
 
 # Update library cache

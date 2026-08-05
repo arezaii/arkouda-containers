@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Recovered Containerfile for the lost Debian-based Chapel multi-runtime base.
 #
 # This file is meant to reproduce the lineage behind the local image tagged as:
@@ -7,6 +8,17 @@
 # It keeps the Debian bookworm base and the dual-runtime Chapel build shape:
 # - HPE Cray EX target runtime using libfabric 2.3.1 with CXI support
 # - Standard linux64 target runtime using CHPL_COMM=none
+#
+# Corporate/intercepting-proxy root CA support:
+# Some networks (e.g. behind a TLS-inspecting proxy) present a certificate
+# chain signed by an internal root CA that isn't in the public ca-certificates
+# bundle, which breaks `git clone`/`curl` over https during the build. Rather
+# than baking that root CA into the image, it can be supplied at build time as
+# a BuildKit/Buildah secret (id=corp_ca) and is only ever mounted into the
+# specific RUN step that needs it - it is never COPYed, never written to a
+# committed layer, and each RUN removes its own temporary combined CA bundle
+# before the layer is committed. Builds without the secret work unmodified
+# (required=false).
 
 FROM debian:bookworm-slim AS chapel-runtime-base
 
@@ -14,10 +26,16 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=secret,id=corp_ca,target=/tmp/corp-ca.crt,required=false \
+    apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl && \
+    if [ -s /tmp/corp-ca.crt ]; then \
+        cat /etc/ssl/certs/ca-certificates.crt /tmp/corp-ca.crt > /tmp/build-ca-bundle.crt; \
+        export CURL_CA_BUNDLE=/tmp/build-ca-bundle.crt; \
+    fi && \
     curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key > /etc/apt/trusted.gpg.d/apt.llvm.org.asc && \
+    rm -f /tmp/build-ca-bundle.crt && \
     echo 'deb http://apt.llvm.org/bookworm/ llvm-toolchain-bookworm-22 main' > /etc/apt/sources.list.d/llvm.list && \
     apt-get update && apt-get install -y --no-install-recommends \
     autoconf \
@@ -83,11 +101,16 @@ RUN git config --global user.email "noreply@example.com" && \
 FROM chapel-runtime-base AS cxi-dev
 
 ARG CXI_VERSION=release/shs-13.1.0
-ARG CXI_DRIVER_COMMIT=release/shs-13.1.0
-ARG LIBCXI_COMMIT=release/shs-13.1.0
+ARG CXI_DRIVER_COMMIT=3233be5
+ARG LIBCXI_COMMIT=ebd57a9
 ARG MAKE_THREADS=auto
 
-RUN cd /tmp && \
+RUN --mount=type=secret,id=corp_ca,target=/tmp/corp-ca.crt,required=false \
+    cd /tmp && \
+    if [ -s /tmp/corp-ca.crt ]; then \
+        cat /etc/ssl/certs/ca-certificates.crt /tmp/corp-ca.crt > /tmp/build-ca-bundle.crt; \
+        export GIT_SSL_CAINFO=/tmp/build-ca-bundle.crt CURL_CA_BUNDLE=/tmp/build-ca-bundle.crt; \
+    fi && \
     git clone --depth 1 --branch "${CXI_VERSION}" \
         https://github.com/HewlettPackard/shs-cassini-headers.git && \
     git clone https://github.com/HewlettPackard/shs-libcxi.git && \
@@ -106,7 +129,8 @@ RUN cd /tmp && \
     cp -a shs-cassini-headers/include/. /opt/cxi-dev/include/ && \
     cp -a shs-cassini-headers/share/cassini-headers/. /usr/share/cassini-headers/ && \
     cp shs-libcxi/include/libcxi.h /opt/cxi-dev/include/libcxi/ && \
-    cp -a shs-cxi-driver/include/. /opt/cxi-dev/include/
+    cp -a shs-cxi-driver/include/. /opt/cxi-dev/include/ && \
+    rm -f /tmp/build-ca-bundle.crt
 
 RUN cd /tmp/shs-libcxi && \
     ./autogen.sh && \
@@ -136,8 +160,14 @@ ENV LIBRARY_PATH=/opt/cxi-dev/lib
 ENV CPATH=/opt/cxi-dev/include
 ENV PKG_CONFIG_PATH=/opt/cxi-dev/lib/pkgconfig
 
-RUN git clone --depth 1 --branch "v${LIBFABRIC_VERSION}" \
-    https://github.com/ofiwg/libfabric.git /tmp/libfabric
+RUN --mount=type=secret,id=corp_ca,target=/tmp/corp-ca.crt,required=false \
+    if [ -s /tmp/corp-ca.crt ]; then \
+        cat /etc/ssl/certs/ca-certificates.crt /tmp/corp-ca.crt > /tmp/build-ca-bundle.crt; \
+        export GIT_SSL_CAINFO=/tmp/build-ca-bundle.crt CURL_CA_BUNDLE=/tmp/build-ca-bundle.crt; \
+    fi && \
+    git clone --depth 1 --branch "v${LIBFABRIC_VERSION}" \
+    https://github.com/ofiwg/libfabric.git /tmp/libfabric && \
+    rm -f /tmp/build-ca-bundle.crt
 
 RUN cd /tmp/libfabric && \
     sed -i '/^# Stand-alone srun tests for hardware testing environment$/,/^if HAVE_CRITERION$/{ /^if HAVE_CRITERION$/!d; }' prov/cxi/Makefile.include && \
@@ -183,8 +213,14 @@ ENV CPATH=/opt/libfabric/include:/opt/cxi-dev/include
 ENV PKG_CONFIG_PATH=/opt/libfabric/lib/pkgconfig:/opt/cxi-dev/lib/pkgconfig
 ENV LIBFABRIC_DIR=/opt/libfabric
 
-RUN git clone --depth 1 --branch "${CHAPEL_VERSION}" https://github.com/chapel-lang/chapel.git . || \
-    (git clone https://github.com/chapel-lang/chapel.git . && git checkout "${CHAPEL_VERSION}")
+RUN --mount=type=secret,id=corp_ca,target=/tmp/corp-ca.crt,required=false \
+    if [ -s /tmp/corp-ca.crt ]; then \
+        cat /etc/ssl/certs/ca-certificates.crt /tmp/corp-ca.crt > /tmp/build-ca-bundle.crt; \
+        export GIT_SSL_CAINFO=/tmp/build-ca-bundle.crt CURL_CA_BUNDLE=/tmp/build-ca-bundle.crt; \
+    fi && \
+    (git clone --depth 1 --branch "${CHAPEL_VERSION}" https://github.com/chapel-lang/chapel.git . || \
+    (git clone https://github.com/chapel-lang/chapel.git . && git checkout "${CHAPEL_VERSION}")) && \
+    rm -f /tmp/build-ca-bundle.crt
 
 ENV CHPL_HOST_PLATFORM=linux64 \
     CHPL_LLVM=system \
@@ -208,7 +244,12 @@ RUN CHPL_TARGET_PLATFORM=hpe-cray-ex \
     fi; \
     make -j"${make_threads}"'
 
-RUN CHPL_TARGET_PLATFORM=linux64 \
+RUN --mount=type=secret,id=corp_ca,target=/tmp/corp-ca.crt,required=false \
+    if [ -s /tmp/corp-ca.crt ]; then \
+        cat /etc/ssl/certs/ca-certificates.crt /tmp/corp-ca.crt > /tmp/build-ca-bundle.crt; \
+        export GIT_SSL_CAINFO=/tmp/build-ca-bundle.crt CURL_CA_BUNDLE=/tmp/build-ca-bundle.crt; \
+    fi && \
+    CHPL_TARGET_PLATFORM=linux64 \
     CHPL_COMM=none \
     CHPL_LIBFABRIC=none \
     CHPL_LAUNCHER=none \
@@ -219,7 +260,8 @@ RUN CHPL_TARGET_PLATFORM=linux64 \
     python3 -m ensurepip --upgrade 2>/dev/null || true; \
     make -j"${make_threads}" && \
     make chapel-py-venv && \
-    make mason'
+    make mason' && \
+    rm -f /tmp/build-ca-bundle.crt
 
 RUN /usr/local/bin/chapel-test-compile
 
