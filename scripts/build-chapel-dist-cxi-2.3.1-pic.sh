@@ -17,6 +17,19 @@ CXI_VERSION=${CXI_VERSION:-release/shs-13.1.0}
 CXI_DRIVER_COMMIT=${CXI_DRIVER_COMMIT:-3233be5}
 LIBCXI_COMMIT=${LIBCXI_COMMIT:-ebd57a9}
 
+# Container CLI to use. Auto-detects: prefers docker, falls back to podman if
+# docker isn't on PATH. Override with the DOCKER_CMD environment variable
+# (e.g. `DOCKER_CMD=podman ./scripts/build-chapel-dist-cxi-2.3.1-pic.sh`).
+if [ -n "${DOCKER_CMD:-}" ]; then
+    :
+elif command -v docker >/dev/null 2>&1; then
+    DOCKER_CMD="docker"
+elif command -v podman >/dev/null 2>&1; then
+    DOCKER_CMD="podman"
+else
+    DOCKER_CMD="docker"
+fi
+
 # Configuration
 CONTAINER_NAME="chapel-${CHAPEL_VERSION}-libfabric-${LIBFABRIC_VERSION}-cxi-pic"
 CONTAINERFILE="containers/Containerfile.hpe-cray-ex-chapel-pic"
@@ -59,7 +72,7 @@ echo ""
     echo "Build configuration:"
 } | tee "$BUILD_LOG"
 
-# Build with Podman
+echo "Container CLI: ${DOCKER_CMD}" | tee -a "$BUILD_LOG"
 echo "Building with versions:" | tee -a "$BUILD_LOG"
 echo "  CHPL_TARGET_CPU=none" | tee -a "$BUILD_LOG"
 echo "  libfabric=${LIBFABRIC_VERSION}" | tee -a "$BUILD_LOG"
@@ -83,7 +96,7 @@ if [ -n "${CORP_CA_FILE:-}" ]; then
     SECRET_ARGS=(--secret "id=corp_ca,src=${CORP_CA_FILE}")
 fi
 
-docker build --progress plain -t "$PODMAN_IMAGE" -f "$CONTAINERFILE" \
+"${DOCKER_CMD}" build --progress plain -t "$PODMAN_IMAGE" -f "$CONTAINERFILE" \
     --build-arg LIBFABRIC_VERSION="$LIBFABRIC_VERSION" \
     --build-arg CHAPEL_VERSION="$CHAPEL_VERSION" \
     --build-arg CXI_VERSION="$CXI_VERSION" \
@@ -96,7 +109,7 @@ BUILD_EXIT_CODE=$?
 echo "Build completed at: $(date)" | tee -a "$BUILD_LOG"
 echo "Final disk space: $(df -h . | tail -1 | awk '{print $4}')" | tee -a "$BUILD_LOG"
 if [ $BUILD_EXIT_CODE -ne 0 ]; then
-    echo "Podman build failed with exit code: $BUILD_EXIT_CODE" | tee -a "$BUILD_LOG"
+    echo "Build failed (${DOCKER_CMD}) with exit code: $BUILD_EXIT_CODE" | tee -a "$BUILD_LOG"
     exit 1
 fi
 

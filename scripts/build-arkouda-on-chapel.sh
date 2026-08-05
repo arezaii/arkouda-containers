@@ -17,9 +17,20 @@ LIBICONV_VERSION="1.17"
 ARROW_VERSION="19.0.1-1"
 IMAGE_TAG=""
 BUILD_ARGS=""
-DOCKER_CMD="docker"
 LOG_FILE="build-arkouda-$(date +%Y%m%d-%H%M%S).log"
 VERBOSE=false
+
+# Auto-detect container CLI: prefer docker, fall back to podman.
+# Override anytime with -d/--docker-cmd or the DOCKER_CMD env var.
+if [ -n "${DOCKER_CMD:-}" ]; then
+    :
+elif command -v docker >/dev/null 2>&1; then
+    DOCKER_CMD="docker"
+elif command -v podman >/dev/null 2>&1; then
+    DOCKER_CMD="podman"
+else
+    DOCKER_CMD="docker"
+fi
 
 # Function to show usage
 usage() {
@@ -35,7 +46,8 @@ OPTIONS:
         --arrow-version VER      Arrow/Parquet version (default: ${ARROW_VERSION})
     -t, --tag TAG                Output image tag (default: auto-generated)
     -a, --build-arg ARG          Additional build argument (can be used multiple times)
-    -d, --docker-cmd CMD         Docker command to use (default: ${DOCKER_CMD})
+    -d, --docker-cmd CMD         Container CLI to use (default: auto-detected; tries
+                                  'docker' first, falls back to 'podman'; currently: ${DOCKER_CMD})
     -l, --log-file FILE          Build log file (default: ${LOG_FILE})
     -V, --verbose                Enable verbose output
     -h, --help                   Show this help message
