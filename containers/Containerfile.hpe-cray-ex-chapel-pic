@@ -147,13 +147,10 @@ RUN test -f /opt/cxi-dev/include/libcxi/libcxi.h && \
     test -f /opt/cxi-dev/include/uapi/misc/cxi.h && \
     test -f /opt/cxi-dev/lib/libcxi.so
 
-FROM chapel-runtime-base AS libfabric-build
+FROM cxi-dev AS libfabric-build
 
 ARG LIBFABRIC_VERSION=2.3.1
 ARG MAKE_THREADS=auto
-
-COPY --from=cxi-dev /opt/cxi-dev /opt/cxi-dev
-COPY --from=cxi-dev /usr/share/cassini-headers /usr/share/cassini-headers
 
 ENV LD_LIBRARY_PATH=/opt/cxi-dev/lib
 ENV LIBRARY_PATH=/opt/cxi-dev/lib

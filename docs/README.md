@@ -24,10 +24,8 @@ build, run, and package them.
 flowchart TD
     A[debian:bookworm-slim] --> B[chapel-runtime-base<br/>apt deps + LLVM 22]
     B --> C[cxi-dev<br/>HPE Slingshot CXI headers + libcxi]
-    B --> D[libfabric-build<br/>libfabric 2.3.1 + CXI provider]
-    C --> D
-    C --> E[chapel-hpe-cray-ex-build<br/>Chapel 2.9.0, dual runtimes]
-    D --> E
+    C --> D[libfabric-build<br/>libfabric 2.3.1 + CXI provider]
+    D --> E[chapel-hpe-cray-ex-build<br/>Chapel 2.9.0, dual runtimes]
     E --> F[chapel-multi-rt-base<br/>= Containerfile.hpe-cray-ex-chapel-pic]
     F --> G[arkouda-builder<br/>Containerfile.arkouda-on-chapel]
     G --> H[runtime<br/>final Arkouda-on-Chapel image]
