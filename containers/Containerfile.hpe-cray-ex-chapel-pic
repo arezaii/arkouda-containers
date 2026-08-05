@@ -198,8 +198,8 @@ ARG CHAPEL_VERSION=2.9.0
 ENV CHPL_HOME=/opt/chapel
 WORKDIR ${CHPL_HOME}
 
-COPY --from=cxi-dev /opt/cxi-dev /opt/cxi-dev
-COPY --from=cxi-dev /usr/share/cassini-headers /usr/share/cassini-headers
+COPY --from=libfabric-build /opt/cxi-dev /opt/cxi-dev
+COPY --from=libfabric-build /usr/share/cassini-headers /usr/share/cassini-headers
 COPY --from=libfabric-build /opt/libfabric /opt/libfabric
 COPY scripts/chapel-test-compile /usr/local/bin/chapel-test-compile
 
@@ -300,8 +300,8 @@ ENV CHPL_RT_COMM_OFI_DEDICATED_AMH_CORES=true
 ENV FI_PROVIDER=cxi
 ENV FI_LOG_LEVEL=warn
 
-COPY --from=cxi-dev /opt/cxi-dev /opt/cxi-dev
-COPY --from=cxi-dev /usr/share/cassini-headers /usr/share/cassini-headers
+COPY --from=libfabric-build /opt/cxi-dev /opt/cxi-dev
+COPY --from=libfabric-build /usr/share/cassini-headers /usr/share/cassini-headers
 COPY --from=libfabric-build /opt/libfabric /opt/libfabric
 COPY --from=chapel-hpe-cray-ex-build /opt/chapel /opt/chapel
 COPY scripts/chapel-start /usr/local/bin/chapel-start
