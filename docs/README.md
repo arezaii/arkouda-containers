@@ -9,8 +9,8 @@ build, run, and package them.
 - [Prerequisites](#prerequisites)
 - [Quick start](#quick-start)
 - [1. Building the Chapel base image](#1-building-the-chapel-base-image)
-- [2. Building Arkouda on Chapel](#2-building-arkouda-on-chapel)
-- [3. Running the Arkouda-on-Chapel container](#3-running-the-arkouda-on-chapel-container)
+- [2. Building Arkouda](#2-building-arkouda)
+- [3. Running the Arkouda container](#3-running-the-arkouda-container)
 - [Converting to an Apptainer/Singularity SIF](#converting-to-an-apptainersingularity-sif)
 - [Corporate CA / TLS-inspecting proxy support](#corporate-ca--tls-inspecting-proxy-support)
 - [HPC library forwarding with e4s-cl](#hpc-library-forwarding-with-e4s-cl)
@@ -27,8 +27,8 @@ flowchart TD
     C --> D[libfabric-build<br/>libfabric 2.3.1 + CXI provider]
     D --> E[chapel-hpe-cray-ex-build<br/>Chapel 2.9.0, dual runtimes]
     E --> F[chapel-multi-rt-base<br/>= Containerfile.hpe-cray-ex-chapel-pic]
-    F --> G[arkouda-builder<br/>Containerfile.arkouda-on-chapel]
-    G --> H[runtime<br/>final Arkouda-on-Chapel image]
+    F --> G[arkouda-builder<br/>Containerfile.arkouda]
+    G --> H[runtime<br/>final Arkouda image]
 ```
 
 - **`Containerfile.hpe-cray-ex-chapel-pic`** produces a Chapel image with
@@ -39,7 +39,7 @@ flowchart TD
   `make chapel-py-venv` and `make mason`, so the image ships the Chapel
   Python bindings (importable via `python3 -c "import chapel"`, on
   `$PYTHONPATH`) and the `mason` package manager on `$PATH`.
-- **`Containerfile.arkouda-on-chapel`** takes that image as its
+- **`Containerfile.arkouda`** takes that image as its
   `CHAPEL_BASE_IMAGE` build argument and builds Arkouda against whichever
   runtime is active in the base image's environment (`hpe-cray-ex`/OFI by
   default), producing a single `arkouda_server` binary. The Arkouda Python
@@ -64,11 +64,15 @@ flowchart TD
 # 1. Build the Chapel base image (containers/Containerfile.hpe-cray-ex-chapel-pic)
 ./scripts/build-chapel-dist-cxi-2.3.1-pic.sh
 
-# 2. Build Arkouda on top of it (containers/Containerfile.arkouda-on-chapel)
-./scripts/build-arkouda-on-chapel.sh
+# 2. Build Arkouda on top of it (containers/Containerfile.arkouda)
+./scripts/build-arkouda.sh
 
-# 3. Run it (starts a standalone single-node SLURM in-container, then arkouda_server -nl 1)
-./scripts/run-arkouda-on-chapel.sh
+# 3. Run it on a single workstation (starts a standalone single-node SLURM
+#    in-container, then arkouda_server -nl 1) - see "Running the
+#    Arkouda container" below for the full command
+docker run --rm -it -e FI_PROVIDER=tcp \
+  arkouda-2026.07.15-cxi:latest \
+  /bin/bash -lc 'slurm-start >/tmp/slurm-start.log 2>&1; arkouda_server -nl 1'
 ```
 
 All scripts can be run from any directory — they resolve the repository root
@@ -95,10 +99,10 @@ Configuration via environment variables (all optional):
 The build produces `localhost/chapel-${CHAPEL_VERSION}-libfabric-${LIBFABRIC_VERSION}-cxi-pic:latest`
 and writes a timestamped log to `build-logs/`.
 
-## 2. Building Arkouda on Chapel
+## 2. Building Arkouda
 
 ```bash
-./scripts/build-arkouda-on-chapel.sh [OPTIONS]
+./scripts/build-arkouda.sh [OPTIONS]
 ```
 
 | Option | Default | Description |
@@ -107,7 +111,7 @@ and writes a timestamped log to `build-logs/`.
 | `-v, --arkouda-version` | `2026.07.15` | Arkouda git tag/release to build |
 | `--libiconv-version` | `1.17` | GNU libiconv version |
 | `--arrow-version` | `19.0.1-1` | Apache Arrow/Parquet package version |
-| `-t, --tag` | `arkouda-on-chapel-<version>-cxi:latest` | Output image tag |
+| `-t, --tag` | `arkouda-<version>-cxi:latest` | Output image tag |
 | `-a, --build-arg` | — | Extra `--build-arg`, repeatable |
 | `-d, --docker-cmd` | `docker` | Use `podman` instead if preferred |
 | `-V, --verbose` | `false` | Stream full build output, useful for docker builds |
@@ -122,44 +126,77 @@ Patches under `patches/` are applied conditionally based on
 `ARKOUDA_VERSION` (currently only `versioneer_update.patch`, applied for
 `2025.09.30`).
 
-## 3. Running the Arkouda-on-Chapel container
+## 3. Running the Arkouda container
+
+There is no wrapper script for this — the two ways you'll actually run the
+image are different enough (plain `docker`/`podman` on a workstation vs.
+`apptainer`+`e4s-cl` on real HPE Cray EX hardware) that a single script
+can't paper over the difference without lying about what it's doing. Use
+the `docker`/`podman` commands below directly, substituting `podman` for
+`docker` if that's your container CLI.
+
+> **Why `-e FI_PROVIDER=tcp` is required:** the image bakes in
+> `FI_PROVIDER=cxi` because that's what `arkouda_server` needs on real HPE
+> Slingshot hardware. A plain Linux workstation has no CXI NIC, so without
+> this override `arkouda_server` fails to initialize the OFI comm layer at
+> startup. `tcp` works anywhere (including over loopback for a single-node
+> run) at the cost of Slingshot's performance. On a real Cray node this
+> override should be omitted so the baked-in `cxi` provider is used.
+
+### Interactive shell
 
 ```bash
-./scripts/run-arkouda-on-chapel.sh [OPTIONS] [-- ARKOUDA_SERVER_ARGS...]
+docker run --rm -it arkouda-2026.07.15-cxi:latest /bin/bash
 ```
 
-The image's default command is just `/bin/bash`, so this script wires up a
-usable single-node run: it starts a throwaway SLURM controller/daemon inside
-the container (via the image's built-in `slurm-start` helper) so Chapel's
-`slurm-srun` launcher has something to talk to, then launches
-`arkouda_server`.
+### Single-node run (1 locale)
 
-| Option | Description |
-|---|---|
-| `-t, --tag TAG` | Image tag to run |
-| `-i, --interactive` | Drop into a bash shell instead of starting `arkouda_server` |
-| `-b, --background` | Run detached |
-| `-nl, --locales N` | Locale count passed to `arkouda_server` (default `1`) |
-| `--no-slurm` | Skip the in-container standalone SLURM (use on HPC systems where SLURM is already reachable, e.g. via e4s-cl) |
-| `-a, --container-args ARGS` | Extra args passed to `docker run` (bind mounts, port publishing, etc.) |
-
-Examples:
+`CHPL_LAUNCHER=slurm-srun` means `arkouda_server` needs a SLURM controller
+to talk to even for a single locale, so the image ships a `slurm-start`
+helper that stands up a throwaway single-node SLURM controller/daemon
+inside the container before launching `arkouda_server`:
 
 ```bash
-./scripts/run-arkouda-on-chapel.sh --interactive
-./scripts/run-arkouda-on-chapel.sh --locales 2 -- --logLevel=DEBUG
-./scripts/run-arkouda-on-chapel.sh --background --container-args "-v $(pwd)/data:/data -p 5555:5555" -- --port=5555
-./scripts/run-arkouda-on-chapel.sh --no-slurm -- -nl 4   # host SLURM forwarded via e4s-cl
+docker run --rm -it -e FI_PROVIDER=tcp \
+  arkouda-2026.07.15-cxi:latest \
+  /bin/bash -lc 'slurm-start >/tmp/slurm-start.log 2>&1; arkouda_server -nl 1'
 ```
 
-For true multi-node execution across real HPE Cray EX hardware, run the
-image under Apptainer with the host SLURM/libfabric/CXI libraries forwarded
-— see [HPC library forwarding with e4s-cl](#hpc-library-forwarding-with-e4s-cl).
+### Multiple locales on one workstation
+
+Multiple locales can still be scheduled on a single machine (all `srun`
+tasks land on the same node, communicating over loopback `tcp`):
+
+```bash
+docker run --rm -it -e FI_PROVIDER=tcp \
+  arkouda-2026.07.15-cxi:latest \
+  /bin/bash -lc 'slurm-start >/tmp/slurm-start.log 2>&1; arkouda_server -nl 2 --logLevel=DEBUG'
+```
+
+### Background, with a bind mount and published port
+
+```bash
+docker run --rm -d -e FI_PROVIDER=tcp \
+  -v "$(pwd)/data:/data" -p 5555:5555 \
+  arkouda-2026.07.15-cxi:latest \
+  /bin/bash -lc 'slurm-start >/tmp/slurm-start.log 2>&1; arkouda_server -nl 1 --port=5555'
+```
+
+### Distributed multi-node runs on real HPE Cray EX hardware
+
+This is a fundamentally different launch path, not a flag on the commands
+above: it forwards the *host's* SLURM, libfabric, and CXI libraries into an
+Apptainer container instead of starting anything inside the container, and
+it runs `arkouda_server` directly via `e4s-cl launch`/`srun` rather than
+`docker run`/`podman run`. There is no `docker`/`podman` invocation in this
+path at all. See
+[HPC library forwarding with e4s-cl](#hpc-library-forwarding-with-e4s-cl)
+for the full walkthrough.
 
 ## Converting to an Apptainer/Singularity SIF
 
 ```bash
-./scripts/convert-to-sif.sh localhost/arkouda-on-chapel-2026.07.15-cxi:latest --output-dir .
+./scripts/convert-to-sif.sh localhost/arkouda-2026.07.15-cxi:latest --output-dir .
 ```
 
 Exports the image to an OCI archive and converts it with `apptainer build`.
@@ -170,17 +207,17 @@ See `./scripts/convert-to-sif.sh --help` for all options.
 If your network intercepts TLS with an internal root CA, `git clone`/`curl`/
 `wget`/`pip` calls in either build can fail with a certificate verification
 error. Both `build-chapel-dist-cxi-2.3.1-pic.sh` and
-`build-arkouda-on-chapel.sh` accept `CORP_CA_FILE` pointing at a PEM file and
+`build-arkouda.sh` accept `CORP_CA_FILE` pointing at a PEM file and
 pass it to the corresponding Containerfile as a BuildKit/Buildah secret:
 
 ```bash
 export CORP_CA_FILE=~/.config/corp-ca/my-root-ca.pem
 ./scripts/build-chapel-dist-cxi-2.3.1-pic.sh
-./scripts/build-arkouda-on-chapel.sh
+./scripts/build-arkouda.sh
 ```
 
 Every network-touching `RUN` step in both `Containerfile.hpe-cray-ex-chapel-pic`
-and `Containerfile.arkouda-on-chapel` (`git clone`, `curl`, `wget`, `pip
+and `Containerfile.arkouda` (`git clone`, `curl`, `wget`, `pip
 install`) mounts the secret and builds a temporary combined CA bundle for
 just that step:
 
@@ -198,11 +235,15 @@ committed. Builds without `CORP_CA_FILE` set work unmodified.
 
 On real HPE Cray EX systems you'll typically want the container to use the
 host's libfabric/CXI/PMI2/SLURM stack rather than the versions baked into 
-the image:
+the image. This is a separate launch path from the `docker run`/`podman run`
+commands above: there's no in-container `slurm-start`, no
+`FI_PROVIDER=tcp` override (the forwarded host libfabric provides the real
+`cxi` provider), and no docker/podman involved at all — `e4s-cl` invokes
+`srun` on the host, which launches `apptainer` directly against the `.sif`.
 
 ```bash
 ./scripts/setup-e4s-cl-profile.sh
-e4s-cl profile edit --image /path/to/arkouda-on-chapel.sif
+e4s-cl profile edit --image /path/to/arkouda.sif
 e4s-cl profile edit --backend apptainer
 e4s-cl launch srun --job-name=arkouda_server --nodes=2 --ntasks=2 \
   --cpus-per-task=256 --exclusive --time=8:00:00 --kill-on-bad-exit \
@@ -242,7 +283,7 @@ CHPL_LIBFABRIC=none
 CHPL_LAUNCHER=none
 ```
 
-> **Potential enhancement:** `Containerfile.arkouda-on-chapel` currently
+> **Potential enhancement:** `Containerfile.arkouda` currently
 > builds Arkouda once, against the `hpe-cray-ex`/OFI runtime only. Building a
 > second `arkouda_server` targeting `linux64`/`CHPL_COMM=none` (mirroring
 > what the Chapel base image already supports for the `chpl` compiler) would
@@ -260,7 +301,7 @@ Build it first: `./scripts/build-chapel-dist-cxi-2.3.1-pic.sh`.
 **Chapel base image doesn't expose the Python `chapel` module**
 
 Rebuild the Chapel base image — the `arkouda-builder` stage of
-`Containerfile.arkouda-on-chapel` needs `make chapel-py-venv` to have run in
+`Containerfile.arkouda` needs `make chapel-py-venv` to have run in
 the base image.
 
 **Validate the Chapel base image directly**
