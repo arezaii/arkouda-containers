@@ -112,25 +112,3 @@ if [ $BUILD_EXIT_CODE -ne 0 ]; then
     echo "Build failed (${DOCKER_CMD}) with exit code: $BUILD_EXIT_CODE" | tee -a "$BUILD_LOG"
     exit 1
 fi
-
-# Convert to SIF using shared conversion script
-# echo "Converting to SIF format using convert-to-sif.sh..." | tee -a "$BUILD_LOG"
-# "$CONVERT_SCRIPT" "$PODMAN_IMAGE" --filename "$CONTAINER_NAME" --output-dir "$(pwd)" --force 2>&1 | tee -a "$BUILD_LOG"
-# CONVERT_EXIT_CODE=$?
-
-# if [ $CONVERT_EXIT_CODE -eq 0 ]; then
-#     echo "Build successful: $OUTPUT_SIF" | tee -a "$BUILD_LOG"
-
-#     # Quick test
-#     # echo "=== Quick Test ===" | tee -a "$BUILD_LOG"
-#     # echo "Testing if Chapel compiler executable exists..." | tee -a "$BUILD_LOG"
-#     # apptainer exec "$OUTPUT_SIF" ls -la /opt/arkouda/arkouda_server_real 2>&1 | tee -a "$BUILD_LOG" || echo "Arkouda server not found" | tee -a "$BUILD_LOG"
-
-#     echo "" | tee -a "$BUILD_LOG"
-#     echo "Checking if libfabric has CXI provider compiled..." | tee -a "$BUILD_LOG"
-#     apptainer exec "$OUTPUT_SIF" strings /opt/libfabric/lib/libfabric.so.1 | grep -i cxi | head -10 2>&1 | tee -a "$BUILD_LOG" || echo "CXI strings not found in libfabric" | tee -a "$BUILD_LOG"
-
-# else
-#     echo "SIF conversion failed" | tee -a "$BUILD_LOG"
-#     exit 1
-# fi

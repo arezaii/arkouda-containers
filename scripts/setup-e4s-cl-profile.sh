@@ -116,7 +116,7 @@ if ! e4s-cl profile show &> /dev/null; then
     echo "Warning: No e4s-cl profile found or e4s-cl profile is not properly configured."
     echo "Please create and configure an e4s-cl profile first using:"
     echo "  e4s-cl profile create <profile-name>"
-    echo "  e4s-cl profile activate <profile-name>"
+    echo "  e4s-cl profile select <profile-name>"
     exit 1
 fi
 
@@ -265,13 +265,34 @@ fi
 echo "Executing e4s-cl profile commands against profile: $PROFILE_NAME"
 echo ""
 
+# Execute only known-safe generated command shapes without eval.
+run_generated_command() {
+    local cmd="$1"
+    local path
+
+    if [[ "$cmd" =~ ^e4s-cl[[:space:]]+profile[[:space:]]+edit[[:space:]]+--add-libraries[[:space:]]+"([^"]+)"$ ]]; then
+        path="${BASH_REMATCH[1]}"
+        e4s-cl profile edit --add-libraries "$path"
+        return
+    fi
+
+    if [[ "$cmd" =~ ^e4s-cl[[:space:]]+profile[[:space:]]+edit[[:space:]]+--add-files[[:space:]]+"([^"]+)"$ ]]; then
+        path="${BASH_REMATCH[1]}"
+        e4s-cl profile edit --add-files "$path"
+        return
+    fi
+
+    echo "  [FAIL] Unsupported generated command format: $cmd" >&2
+    return 2
+}
+
 # Execute each command with error handling
 SUCCESS_COUNT=0
 FAIL_COUNT=0
 
 for cmd in "${FILTERED_COMMANDS[@]}"; do
     echo "Running: $cmd"
-    if eval "$cmd"; then
+    if run_generated_command "$cmd"; then
         echo "  [OK] Success"
         ((SUCCESS_COUNT++)) || true
     else

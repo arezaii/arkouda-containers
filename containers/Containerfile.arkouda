@@ -150,14 +150,16 @@ ENV CPATH=/usr/local/include:${CPATH}
 ENV ARKOUDA_ZMQ_PATH=/usr/lib/x86_64-linux-gnu
 ENV ARKOUDA_HDF5_PATH=/usr/lib/x86_64-linux-gnu/hdf5/serial
 
-# Build Arkouda with multi-dimensional array configuration and large maximum
-# Chapel instantiations
-# Chapel environment variables are inherited from the base image
-# Parquet is always enabled for this build
+# Build two Arkouda server variants from the same source tree:
+# 1) OFI/Slurm variant for HPE Cray EX distributed runs
+# 2) CHPL_COMM=none variant for standalone single-node container runs
 RUN cd /opt/arkouda && \
     ldconfig && \
     ldconfig -p | grep -E "lib(arrow|parquet)" && \
     cp .configs/registration-config-multi-dim.json registration-config.json && \
+    CHPL_FLAGS="--instantiate-max=1024" ARKOUDA_SKIP_CHECK_DEPS=true make ARRAY_ND_MAX=3 && \
+    cp -a /opt/arkouda /opt/arkouda-ofi && \
+    CHPL_TARGET_PLATFORM=linux64 CHPL_COMM=none CHPL_LIBFABRIC=none CHPL_LAUNCHER=none \
     CHPL_FLAGS="--instantiate-max=1024" ARKOUDA_SKIP_CHECK_DEPS=true make ARRAY_ND_MAX=3
 
 # ========================================
@@ -173,8 +175,9 @@ ARG ARKOUDA_VERSION=2026.07.15
 ARG ARROW_VERSION=19.0.1-1
 ARG LIBICONV_VERSION=1.17
 
-# Copy built Arkouda binaries and Python environment
+# Copy built Arkouda install trees and Python environment
 COPY --from=arkouda-builder /opt/arkouda /opt/arkouda
+COPY --from=arkouda-builder /opt/arkouda-ofi /opt/arkouda-ofi
 COPY --from=arkouda-builder /opt/arkouda-venv /opt/arkouda-venv
 
 # Copy GNU libiconv libraries
@@ -210,8 +213,6 @@ RUN --mount=type=secret,id=corp_ca,target=/tmp/corp-ca.crt,required=false \
         libre2-dev \
         libcurl4-openssl-dev \
         libssl-dev \
-        munge \
-        slurm-wlm \
     && rm -f /tmp/apache-arrow-apt.deb /tmp/build-ca-bundle.crt \
     && rm -rf /var/lib/apt/lists/*
 
@@ -229,26 +230,9 @@ RUN ldconfig -p | grep -q 'libzmq\.so'
 
 RUN ldconfig -p | grep -q 'libhdf5'
 
-# Set up minimal SLURM configuration for standalone operation
-RUN mkdir -p /etc/slurm /etc/munge /var/log/slurm /var/spool/slurm /run/slurm && \
-    chmod 755 /var/log/slurm /var/spool/slurm /run/slurm
-
-# Copy SLURM configuration for single-node operation
-COPY configs/slurm.conf /etc/slurm/slurm.conf
-COPY configs/cgroup.conf /etc/slurm/cgroup.conf
-
-# Create MUNGE key for authentication
-RUN dd if=/dev/urandom bs=1 count=1024 > /etc/munge/munge.key && \
-    chown munge:munge /etc/munge/munge.key && \
-    chmod 400 /etc/munge/munge.key
-
-# Copy SLURM startup scripts
-COPY scripts/startup-slurm-for-container.sh /opt/startup-slurm-for-container.sh
-COPY scripts/slurm-start.sh /usr/local/bin/slurm-start
-RUN chmod +x /opt/startup-slurm-for-container.sh /usr/local/bin/slurm-start
-
 # Set up environment variables
 ENV ARKOUDA_HOME=/opt/arkouda \
+    ARKOUDA_HOME_OFI=/opt/arkouda-ofi \
     ARKOUDA_VENV=/opt/arkouda-venv \
     VIRTUAL_ENV=/opt/arkouda-venv
 

@@ -67,12 +67,12 @@ flowchart TD
 # 2. Build Arkouda on top of it (containers/Containerfile.arkouda)
 ./scripts/build-arkouda.sh
 
-# 3. Run it on a single workstation (starts a standalone single-node SLURM
-#    in-container, then arkouda_server -nl 1) - see "Running the
+# 3. Run it on a single workstation (standalone comm=none server at
+#    /opt/arkouda/arkouda_server) - see "Running the
 #    Arkouda container" below for the full command
-docker run --rm -it -e FI_PROVIDER=tcp \
-  arkouda-2026.07.15-cxi:latest \
-  /bin/bash -lc 'slurm-start >/tmp/slurm-start.log 2>&1; arkouda_server -nl 1'
+docker run --rm -it \
+  arkouda-on-chapel-2026.07.15-cxi:latest \
+  /bin/bash -lc '/opt/arkouda/arkouda_server'
 ```
 
 All scripts can be run from any directory — they resolve the repository root
@@ -105,13 +105,21 @@ and writes a timestamped log to `build-logs/`.
 ./scripts/build-arkouda.sh [OPTIONS]
 ```
 
+Build resource expectations:
+
+- Use a build machine with at least 64 GB of RAM. The Arkouda build in this
+  image enables multi-dimensional array support, which substantially increases
+  compile-time memory pressure.
+- Expect build time to range from about 1 hour to several hours, depending on
+  CPU count, storage speed, and container cache state.
+
 | Option | Default | Description |
 |---|---|---|
 | `-b, --base-image` | `localhost/chapel-2.9.0-libfabric-2.3.1-cxi-pic:latest` | Chapel base image from step 1 |
 | `-v, --arkouda-version` | `2026.07.15` | Arkouda git tag/release to build |
 | `--libiconv-version` | `1.17` | GNU libiconv version |
 | `--arrow-version` | `19.0.1-1` | Apache Arrow/Parquet package version |
-| `-t, --tag` | `arkouda-<version>-cxi:latest` | Output image tag |
+| `-t, --tag` | `arkouda-on-chapel-<version>-cxi:latest` | Output image tag |
 | `-a, --build-arg` | — | Extra `--build-arg`, repeatable |
 | `-d, --docker-cmd` | `docker` | Use `podman` instead if preferred |
 | `-V, --verbose` | `false` | Stream full build output, useful for docker builds |
@@ -135,51 +143,39 @@ can't paper over the difference without lying about what it's doing. Use
 the `docker`/`podman` commands below directly, substituting `podman` for
 `docker` if that's your container CLI.
 
-> **Why `-e FI_PROVIDER=tcp` is required:** the image bakes in
-> `FI_PROVIDER=cxi` because that's what `arkouda_server` needs on real HPE
-> Slingshot hardware. A plain Linux workstation has no CXI NIC, so without
-> this override `arkouda_server` fails to initialize the OFI comm layer at
-> startup. `tcp` works anywhere (including over loopback for a single-node
-> run) at the cost of Slingshot's performance. On a real Cray node this
-> override should be omitted so the baked-in `cxi` provider is used.
+> **Runtime split:** this image carries two Arkouda install trees with standard
+> Arkouda binary names in each tree. Use `/opt/arkouda/arkouda_server` for
+> standalone single-node runs (`CHPL_COMM=none`). Use
+> `/opt/arkouda-ofi/arkouda_server_real` for distributed/HPC launch paths.
 
 ### Interactive shell
 
 ```bash
-docker run --rm -it arkouda-2026.07.15-cxi:latest /bin/bash
+docker run --rm -it arkouda-on-chapel-2026.07.15-cxi:latest /bin/bash
 ```
 
-### Single-node run (1 locale)
+The Arkouda server binaries live under `/opt/arkouda/` in the image. They are
+not exported on the default shell `$PATH`, so launch commands should use the
+absolute path.
 
-`CHPL_LAUNCHER=slurm-srun` means `arkouda_server` needs a SLURM controller
-to talk to even for a single locale, so the image ships a `slurm-start`
-helper that stands up a throwaway single-node SLURM controller/daemon
-inside the container before launching `arkouda_server`:
+### Single-node run (1 locale, preferred)
 
-```bash
-docker run --rm -it -e FI_PROVIDER=tcp \
-  arkouda-2026.07.15-cxi:latest \
-  /bin/bash -lc 'slurm-start >/tmp/slurm-start.log 2>&1; arkouda_server -nl 1'
-```
-
-### Multiple locales on one workstation
-
-Multiple locales can still be scheduled on a single machine (all `srun`
-tasks land on the same node, communicating over loopback `tcp`):
+For workstation/local validation, use the `CHPL_COMM=none` install tree and
+skip SLURM entirely:
 
 ```bash
-docker run --rm -it -e FI_PROVIDER=tcp \
-  arkouda-2026.07.15-cxi:latest \
-  /bin/bash -lc 'slurm-start >/tmp/slurm-start.log 2>&1; arkouda_server -nl 2 --logLevel=DEBUG'
+docker run --rm -it \
+  arkouda-on-chapel-2026.07.15-cxi:latest \
+  /bin/bash -lc '/opt/arkouda/arkouda_server'
 ```
 
 ### Background, with a bind mount and published port
 
 ```bash
-docker run --rm -d -e FI_PROVIDER=tcp \
+docker run --rm -d \
   -v "$(pwd)/data:/data" -p 5555:5555 \
-  arkouda-2026.07.15-cxi:latest \
-  /bin/bash -lc 'slurm-start >/tmp/slurm-start.log 2>&1; arkouda_server -nl 1 --port=5555'
+  arkouda-on-chapel-2026.07.15-cxi:latest \
+  /bin/bash -lc '/opt/arkouda/arkouda_server --port=5555'
 ```
 
 ### Distributed multi-node runs on real HPE Cray EX hardware
@@ -191,12 +187,13 @@ it runs `arkouda_server` directly via `e4s-cl launch`/`srun` rather than
 `docker run`/`podman run`. There is no `docker`/`podman` invocation in this
 path at all. See
 [HPC library forwarding with e4s-cl](#hpc-library-forwarding-with-e4s-cl)
-for the full walkthrough.
+for the reusable profile setup, a hostname preflight, and a full multi-node
+`arkouda_server` launch example.
 
 ## Converting to an Apptainer/Singularity SIF
 
 ```bash
-./scripts/convert-to-sif.sh localhost/arkouda-2026.07.15-cxi:latest --output-dir .
+./scripts/convert-to-sif.sh localhost/arkouda-on-chapel-2026.07.15-cxi:latest --output-dir .
 ```
 
 Exports the image to an OCI archive and converts it with `apptainer build`.
@@ -241,18 +238,119 @@ commands above: there's no in-container `slurm-start`, no
 `cxi` provider), and no docker/podman involved at all — `e4s-cl` invokes
 `srun` on the host, which launches `apptainer` directly against the `.sif`.
 
+The `e4s-cl` docs recommend a reusable-profile workflow for this case:
+
+1. create or select a profile
+2. attach the host libraries/files that must be forwarded
+3. set the backend and image on that profile
+4. validate the profile with `e4s-cl profile show`
+5. launch with an explicit `--` separator between `srun` arguments and the
+   in-container payload
+
+`e4s-cl` supports broader MPI-oriented workflows too, but this repository only
+uses the profile-backed `apptainer` + `srun` path shown below.
+
+### 1. Create and populate an `e4s-cl` profile
+
+Convert the image first if you only have the OCI/Docker tag:
+
 ```bash
+./scripts/convert-to-sif.sh localhost/arkouda-on-chapel-2026.07.15-cxi:latest --output-dir .
+```
+
+Then create a dedicated profile for the Arkouda container, select it, and
+populate it with the host-side Cray bindings that Chapel's OFI runtime needs:
+
+```bash
+e4s-cl profile create arkouda-hpe-ex
+e4s-cl profile select arkouda-hpe-ex
 ./scripts/setup-e4s-cl-profile.sh
-e4s-cl profile edit --image /path/to/arkouda.sif
-e4s-cl profile edit --backend apptainer
-e4s-cl launch srun --job-name=arkouda_server --nodes=2 --ntasks=2 \
-  --cpus-per-task=256 --exclusive --time=8:00:00 --kill-on-bad-exit \
-  -- arkouda_server -nl 2
+e4s-cl profile edit --backend apptainer --image "$PWD/localhost-arkouda-on-chapel-2026.07.15-cxi-latest.sif"
+e4s-cl profile show arkouda-hpe-ex
 ```
 
 `generate-e4s-cl-profile.sh` detects Cray libfabric, CXI, PMI2, and SLURM
 paths on the host and prints the `e4s-cl profile edit` commands needed;
 `setup-e4s-cl-profile.sh` runs it interactively against a chosen profile.
+After the first run you can re-apply the same detection non-interactively with
+`./scripts/setup-e4s-cl-profile.sh --auto` as long as that profile is already
+selected.
+
+### 2. Run a scheduler/container preflight
+
+Before starting Arkouda, verify that `srun`, `apptainer`, and the selected
+profile work together across the requested nodes:
+
+```bash
+e4s-cl launch --profile arkouda-hpe-ex srun \
+  --job-name=arkouda-preflight \
+  --nodes=2 \
+  --ntasks=2 \
+  --time=00:05:00 \
+  --kill-on-bad-exit \
+  -- /bin/hostname
+```
+
+If that prints one hostname per task from inside the container, the launcher,
+image, and forwarded host bindings are all in the right shape for an Arkouda
+run.
+
+### 3. Launch Arkouda across multiple nodes
+
+Use the same locale count for `srun --nodes`, `srun --ntasks`, and
+`/opt/arkouda-ofi/arkouda_server_real -nl`:
+
+```bash
+LOCALES=2
+
+e4s-cl launch --profile arkouda-hpe-ex srun \
+  --job-name=arkouda_server \
+  --nodes="${LOCALES}" \
+  --ntasks="${LOCALES}" \
+  --cpus-per-task=256 \
+  --exclusive \
+  --time=08:00:00 \
+  --kill-on-bad-exit \
+  --export=ALL,FI_PROVIDER=cxi \
+  -- /opt/arkouda-ofi/arkouda_server_real -nl "${LOCALES}" --logLevel=INFO
+```
+
+The `--` separator is intentional: it keeps `srun` options from being
+misparsed as Arkouda arguments.
+
+On this system, the two-locale launch above got past scheduler allocation and
+container startup, but both locales failed in the CXI/libfabric registration
+path. The first concrete error in the verified Hotlum logs was
+`cxil_map: write error`, followed by
+`cxip_do_map(...): Cannot allocate memory`, which then surfaced at the Chapel
+layer as `fi_mr_reg(...): Cannot allocate memory`. The image bakes in
+`CHPL_RT_MAX_HEAP_SIZE=70%`, and retrying with
+`--export=ALL,FI_PROVIDER=cxi,CHPL_RT_MAX_HEAP_SIZE=50%` did not resolve that
+failure on Hotlum, so treat the heap limit as a tuning knob rather than a
+verified fix.
+
+Common `srun` additions such as `--partition=<name>`, `--account=<acct>`,
+`--qos=<qos>`, and `--output=<file>` can be inserted before the `--` without
+changing the container payload.
+
+If your site needs extra Chapel runtime exports, add them to the `srun`
+`--export=` list. The image is built for `FI_PROVIDER=cxi` on real Slingshot
+hardware, so do **not** use the workstation-only `FI_PROVIDER=tcp` override in
+this launch path.
+
+If you need to experiment with Chapel heap sizing, add
+`CHPL_RT_MAX_HEAP_SIZE=<value>` to that `--export=` list. Smaller values may be
+worth testing when the OFI runtime fails during memory registration, but this
+repository does not currently have a validated production setting for that case.
+
+### 4. Fallback for site-specific host bindings
+
+If `setup-e4s-cl-profile.sh` misses a site-local library or directory bind,
+add it directly with `e4s-cl profile edit --add-libraries ...` or
+`e4s-cl profile edit --add-files ...`, then re-check `e4s-cl profile show`.
+This repo does not rely on `e4s-cl`'s MPI profiling flow; the only relevant
+requirement here is that the selected profile exposes the host-side Cray and
+SLURM paths Arkouda needs at runtime.
 
 ## Chapel runtime environment reference
 
@@ -283,12 +381,10 @@ CHPL_LIBFABRIC=none
 CHPL_LAUNCHER=none
 ```
 
-> **Potential enhancement:** `Containerfile.arkouda` currently
-> builds Arkouda once, against the `hpe-cray-ex`/OFI runtime only. Building a
-> second `arkouda_server` targeting `linux64`/`CHPL_COMM=none` (mirroring
-> what the Chapel base image already supports for the `chpl` compiler) would
-> let a single image serve both multi-node and single-node use without
-> SLURM. Not implemented here — noted for future work.
+`Containerfile.arkouda` now builds two Arkouda install trees:
+
+- `/opt/arkouda` for `linux64`/`CHPL_COMM=none` standalone runs
+- `/opt/arkouda-ofi` for `hpe-cray-ex`/OFI distributed runs
 
 ## Troubleshooting
 
@@ -303,6 +399,25 @@ Build it first: `./scripts/build-chapel-dist-cxi-2.3.1-pic.sh`.
 Rebuild the Chapel base image — the `arkouda-builder` stage of
 `Containerfile.arkouda` needs `make chapel-py-venv` to have run in
 the base image.
+
+**`arkouda_server` or `arkouda_server_real` not found after opening a shell**
+
+The final image does not add Arkouda server directories to the default shell
+`$PATH`. Launch with an absolute path, for example
+`/opt/arkouda/arkouda_server` (standalone) or
+`/opt/arkouda-ofi/arkouda_server_real -nl 2` (distributed).
+
+**`e4s-cl` multi-locale launch fails with `cxil_map: write error` / `fi_mr_reg(...): Cannot allocate memory`**
+
+The verified Hotlum failure mode for
+`e4s-cl launch ... -- /opt/arkouda-ofi/arkouda_server_real -nl 2` is CXI/libfabric
+memory-registration failure during Chapel runtime startup. In the captured
+logs, the failure starts with `cxil_map: write error`, then
+`cxip_do_map(...): Cannot allocate memory`, and finally bubbles up as
+`fi_mr_reg(...): Cannot allocate memory`, even with
+`CHPL_RT_MAX_HEAP_SIZE=50%` exported through `srun`. Keep `FI_PROVIDER=cxi`,
+use `/opt/arkouda-ofi/arkouda_server_real`, and treat `CHPL_RT_MAX_HEAP_SIZE` as a site-specific
+knob that still needs tuning rather than a documented fix.
 
 **Validate the Chapel base image directly**
 ```bash

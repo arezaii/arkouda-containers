@@ -244,8 +244,8 @@ if [ $BUILD_EXIT_CODE -eq 0 ]; then
     echo "  # Interactive shell"
     echo "  ${DOCKER_CMD} run -it ${IMAGE_TAG} /bin/bash"
     echo
-    echo "  # Run Arkouda server (single-locale)"
-    echo "  ${DOCKER_CMD} run -it ${IMAGE_TAG} bash -c '\${ARKOUDA_HOME}/arkouda_server -nl 1'"
+    echo "  # Run Arkouda server (single-locale, no in-container SLURM)"
+    echo "  ${DOCKER_CMD} run -it ${IMAGE_TAG} bash -c '/opt/arkouda/arkouda_server'"
     echo
 else
     log_with_timestamp "Build failed with exit code: $BUILD_EXIT_CODE"
