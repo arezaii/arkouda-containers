@@ -124,7 +124,7 @@ done
 
 # Auto-generate image tag if not set
 if [[ -z "${IMAGE_TAG}" ]]; then
-    IMAGE_TAG="arkouda-on-chapel-${ARKOUDA_VERSION}-cxi:latest"
+    IMAGE_TAG="arkouda-${ARKOUDA_VERSION}-cxi:latest"
 fi
 
 # Verify Chapel base image exists
@@ -186,8 +186,8 @@ log_with_timestamp "Changing to build directory: ${CONTAINER_DIR}"
 cd "$CONTAINER_DIR"
 
 # Verify Containerfile exists
-if [ ! -f "containers/Containerfile.arkouda-on-chapel" ]; then
-    log_with_timestamp "ERROR: Containerfile not found: containers/Containerfile.arkouda-on-chapel"
+if [ ! -f "containers/Containerfile.arkouda" ]; then
+    log_with_timestamp "ERROR: Containerfile not found: containers/Containerfile.arkouda"
     exit 1
 fi
 
@@ -208,7 +208,7 @@ fi
 # Build the container with comprehensive logging
 BUILD_CMD="${DOCKER_CMD} build \
     --progress=plain \
-    --file containers/Containerfile.arkouda-on-chapel \
+    --file containers/Containerfile.arkouda \
     --build-arg CHAPEL_BASE_IMAGE=${CHAPEL_BASE_IMAGE} \
     --build-arg ARKOUDA_VERSION=${ARKOUDA_VERSION} \
     --build-arg LIBICONV_VERSION=${LIBICONV_VERSION} \

@@ -267,7 +267,7 @@ WORKDIR /opt/arkouda
 CMD ["/bin/bash"]
 
 # Metadata capturing the actual build-arg values this image was built from
-LABEL org.opencontainers.image.title="arkouda-on-chapel" \
+LABEL org.opencontainers.image.title="arkouda" \
       org.opencontainers.image.description="Arkouda built on a Chapel container with HPE-Cray-EX + CXI support" \
       arkouda.version="${ARKOUDA_VERSION}" \
       arkouda.runtime="hpe-cray-ex-ofi-cxi" \
