@@ -251,6 +251,14 @@ if [ $BUILD_EXIT_CODE -eq 0 ]; then
     echo "  # Run Arkouda server (single-locale, no in-container SLURM)"
     echo "  ${DOCKER_CMD} run -it ${IMAGE_TAG} bash -c '/opt/arkouda/arkouda_server'"
     echo
+    echo "  # Server in one container (published port) + client in a second"
+    echo "  # container connecting via host.docker.internal - see"
+    echo "  # 'Server + separate client container' in docs/README.md:"
+    echo "  ${DOCKER_CMD} run --rm -d --name arkouda-server -p 5555:5555 \\"
+    echo "    ${IMAGE_TAG} /bin/bash -lc 'arkouda_server'"
+    echo "  ${DOCKER_CMD} run --rm -it --add-host=host.docker.internal:host-gateway \\"
+    echo "    ${IMAGE_TAG} /bin/bash"
+    echo
 else
     log_with_timestamp "Build failed with exit code: $BUILD_EXIT_CODE"
     echo

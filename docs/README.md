@@ -177,6 +177,77 @@ docker run --rm -d \
   /bin/bash -lc 'arkouda_server --port=5555'
 ```
 
+### Server + separate client container
+
+Arkouda's client/server split works across two independent containers, not
+just two shells in the same one: start `arkouda_server` in one container with
+its port published to the host, then connect to it from a second container's
+Python `arkouda` client. `arkouda_server` listens on all interfaces on its
+default port (`5555`) unless overridden, so nothing extra is needed on either
+side beyond publishing that port.
+
+**1. Start the server container, publishing its port:**
+
+```bash
+docker run --rm -d --name arkouda-server \
+  -p 5555:5555 \
+  arkouda-2026.07.15-cxi:latest \
+  /bin/bash -lc 'arkouda_server'
+```
+
+**2. Start a second container for the client, and connect to the server via
+the host:**
+
+```bash
+docker run --rm -it \
+  --add-host=host.docker.internal:host-gateway \
+  arkouda-2026.07.15-cxi:latest \
+  /bin/bash
+```
+
+`--add-host=host.docker.internal:host-gateway` makes the special
+`host.docker.internal` hostname resolve to the host machine from inside the
+client container. It's redundant-but-harmless on Docker Desktop (macOS/
+Windows), where that hostname already works out of the box, but it's
+required to get the same behavior on Linux, so include it for portability.
+Podman supports the same flag and special hostname.
+
+Inside that shell, connect with the Arkouda Python client:
+
+```bash
+python3 -c "
+import arkouda as ak
+ak.connect(server='host.docker.internal')
+print(ak.array([1, 2, 3]).sum())
+ak.disconnect()
+"
+```
+
+`ak.connect()` defaults to port `5555`, matching the server's default, so it
+doesn't need to be passed explicitly unless the server was started with
+`--port=<other>`.
+
+**Alternative: a shared user-defined network.** If you'd rather address the
+server container by name instead of going through the host, put both
+containers on the same Docker/Podman network and connect using the server's
+container name as the hostname:
+
+```bash
+docker network create arkouda-net
+
+docker run --rm -d --name arkouda-server --network arkouda-net \
+  arkouda-2026.07.15-cxi:latest \
+  /bin/bash -lc 'arkouda_server'
+
+docker run --rm -it --network arkouda-net \
+  arkouda-2026.07.15-cxi:latest \
+  /bin/bash -lc "python3 -c \"import arkouda as ak; ak.connect(server='arkouda-server')\""
+```
+
+This avoids relying on `host.docker.internal` and doesn't require publishing
+the port to the host at all, at the cost of an extra `docker network create`
+step.
+
 ### Distributed multi-node runs on real HPE Cray EX hardware
 
 This is a fundamentally different launch path, not a flag on the commands
