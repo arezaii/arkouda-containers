@@ -71,7 +71,7 @@ flowchart TD
 #    /opt/arkouda/arkouda_server) - see "Running the
 #    Arkouda container" below for the full command
 docker run --rm -it \
-  arkouda-on-chapel-2026.07.15-cxi:latest \
+  arkouda-2026.07.15-cxi:latest \
   /bin/bash -lc '/opt/arkouda/arkouda_server'
 ```
 
@@ -119,7 +119,7 @@ Build resource expectations:
 | `-v, --arkouda-version` | `2026.07.15` | Arkouda git tag/release to build |
 | `--libiconv-version` | `1.17` | GNU libiconv version |
 | `--arrow-version` | `19.0.1-1` | Apache Arrow/Parquet package version |
-| `-t, --tag` | `arkouda-on-chapel-<version>-cxi:latest` | Output image tag |
+| `-t, --tag` | `arkouda-<version>-cxi:latest` | Output image tag |
 | `-a, --build-arg` | — | Extra `--build-arg`, repeatable |
 | `-d, --docker-cmd` | `docker` | Use `podman` instead if preferred |
 | `-V, --verbose` | `false` | Stream full build output, useful for docker builds |
@@ -151,7 +151,7 @@ the `docker`/`podman` commands below directly, substituting `podman` for
 ### Interactive shell
 
 ```bash
-docker run --rm -it arkouda-on-chapel-2026.07.15-cxi:latest /bin/bash
+docker run --rm -it arkouda-2026.07.15-cxi:latest /bin/bash
 ```
 
 The Arkouda server binaries live under `/opt/arkouda/` in the image. They are
@@ -165,7 +165,7 @@ skip SLURM entirely:
 
 ```bash
 docker run --rm -it \
-  arkouda-on-chapel-2026.07.15-cxi:latest \
+  arkouda-2026.07.15-cxi:latest \
   /bin/bash -lc '/opt/arkouda/arkouda_server'
 ```
 
@@ -174,7 +174,7 @@ docker run --rm -it \
 ```bash
 docker run --rm -d \
   -v "$(pwd)/data:/data" -p 5555:5555 \
-  arkouda-on-chapel-2026.07.15-cxi:latest \
+  arkouda-2026.07.15-cxi:latest \
   /bin/bash -lc '/opt/arkouda/arkouda_server --port=5555'
 ```
 
@@ -193,7 +193,7 @@ for the reusable profile setup, a hostname preflight, and a full multi-node
 ## Converting to an Apptainer/Singularity SIF
 
 ```bash
-./scripts/convert-to-sif.sh localhost/arkouda-on-chapel-2026.07.15-cxi:latest --output-dir .
+./scripts/convert-to-sif.sh localhost/arkouda-2026.07.15-cxi:latest --output-dir .
 ```
 
 Exports the image to an OCI archive and converts it with `apptainer build`.
@@ -255,7 +255,7 @@ uses the profile-backed `apptainer` + `srun` path shown below.
 Convert the image first if you only have the OCI/Docker tag:
 
 ```bash
-./scripts/convert-to-sif.sh localhost/arkouda-on-chapel-2026.07.15-cxi:latest --output-dir .
+./scripts/convert-to-sif.sh localhost/arkouda-2026.07.15-cxi:latest --output-dir .
 ```
 
 Then create a dedicated profile for the Arkouda container, select it, and
@@ -265,7 +265,7 @@ populate it with the host-side Cray bindings that Chapel's OFI runtime needs:
 e4s-cl profile create arkouda-hpe-ex
 e4s-cl profile select arkouda-hpe-ex
 ./scripts/setup-e4s-cl-profile.sh
-e4s-cl profile edit --backend apptainer --image "$PWD/localhost-arkouda-on-chapel-2026.07.15-cxi-latest.sif"
+e4s-cl profile edit --backend apptainer --image "$PWD/localhost-arkouda-2026.07.15-cxi-latest.sif"
 e4s-cl profile show arkouda-hpe-ex
 ```
 
