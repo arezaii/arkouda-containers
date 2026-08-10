@@ -20,7 +20,7 @@ See **[docs/README.md](docs/README.md)** for the full build and usage guide.
 # 2. Build Arkouda on top of it
 ./scripts/build-arkouda.sh
 
-# 3. Run it on a single workstation (standalone comm=none server)
+# 3. Run it on a single workstation (standalone CHPL_COMM=none server)
 docker run --rm -it --init \
   arkouda-2026.07.15-cxi:latest \
   /bin/bash -lc 'exec /opt/arkouda/arkouda_server'

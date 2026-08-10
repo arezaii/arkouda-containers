@@ -69,7 +69,7 @@ flowchart TD
 # 2. Build Arkouda on top of it (containers/Containerfile.arkouda)
 ./scripts/build-arkouda.sh
 
-# 3. Run it on a single workstation (standalone comm=none server at
+# 3. Run it on a single workstation (standalone CHPL_COMM=none server at
 #    arkouda_server) - see "Running the
 #    Arkouda container" below for the full command
 docker run --rm -it \
