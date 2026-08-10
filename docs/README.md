@@ -16,7 +16,6 @@ build, run, and package them.
 - [HPC library forwarding with e4s-cl](#hpc-library-forwarding-with-e4s-cl)
 - [Chapel runtime environment reference](#chapel-runtime-environment-reference)
 - [Troubleshooting](#troubleshooting)
-- [Legacy / reference material](#legacy--reference-material)
 
 ## Architecture
 
@@ -487,15 +486,14 @@ Rebuild with `./scripts/build-arkouda.sh` and validate inside a shell with
 
 **`e4s-cl` multi-locale launch fails with `cxil_map: write error` / `fi_mr_reg(...): Cannot allocate memory`**
 
-The verified Hotlum failure mode for
+A verified failure mode for
 `e4s-cl launch ... -- arkouda_server_real -nl 2` is CXI/libfabric
-memory-registration failure during Chapel runtime startup. In the captured
-logs, the failure starts with `cxil_map: write error`, then
+memory-registration failure during Chapel runtime startup. The failure starts with `cxil_map: write error`, then
 `cxip_do_map(...): Cannot allocate memory`, and finally bubbles up as
 `fi_mr_reg(...): Cannot allocate memory`, even with
 `CHPL_RT_MAX_HEAP_SIZE=50%` exported through `srun`. Keep `FI_PROVIDER=cxi`,
 use `arkouda_server_real`, and treat `CHPL_RT_MAX_HEAP_SIZE` as a site-specific
-knob that still needs tuning rather than a documented fix.
+knob.
 
 **Validate the Chapel base image directly**
 ```bash

@@ -45,8 +45,3 @@ scripts/
 patches/                                  # patches applied during the Arkouda build
 docs/                                     # full build/usage guide
 ```
-
-Directories not part of this framework (benchmark `results/`, the
-`slurm-docker-cluster/` reference project) are kept in place for reference
-but are out of scope for day-to-day use — see
-[docs/README.md](docs/README.md#legacy--reference-material) for details.
