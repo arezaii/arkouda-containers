@@ -1,0 +1,10 @@
+# Build artifacts
+/build-logs/
+*.sif
+*.oci-archive
+*-oci.tar
+
+# Editor / OS
+.DS_Store
+.vscode/
+.venv/
