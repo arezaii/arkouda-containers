@@ -73,13 +73,8 @@ flowchart TD
 #    arkouda_server) - see "Running the
 #    Arkouda container" below for the full command
 docker run --rm -it \
-<<<<<<< HEAD
   arkouda-2026.07.15-cxi:latest \
-  /bin/bash -lc '/opt/arkouda/arkouda_server'
-=======
-  arkouda-on-chapel-2026.07.15-cxi:latest \
   /bin/bash -lc 'arkouda_server'
->>>>>>> 4150b4f (add server to PATH, combine single and dist paths)
 ```
 
 All scripts can be run from any directory — they resolve the repository root
@@ -178,13 +173,8 @@ docker run --rm -it \
 ```bash
 docker run --rm -d \
   -v "$(pwd)/data:/data" -p 5555:5555 \
-<<<<<<< HEAD
   arkouda-2026.07.15-cxi:latest \
-  /bin/bash -lc '/opt/arkouda/arkouda_server --port=5555'
-=======
-  arkouda-on-chapel-2026.07.15-cxi:latest \
   /bin/bash -lc 'arkouda_server --port=5555'
->>>>>>> 4150b4f (add server to PATH, combine single and dist paths)
 ```
 
 ### Distributed multi-node runs on real HPE Cray EX hardware
