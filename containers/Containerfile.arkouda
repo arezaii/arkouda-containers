@@ -1,9 +1,7 @@
-# Containerfile for Arkouda built on pre-built Chapel container
-# Uses image built from sibling Containerfile.hpe-cray-ex-chapel-pic as base 
-# (contains both hpe-cray-ex and linux64 runtimes)
-# The Chapel base is expected to carry the same CXI-enabled libfabric path that
-# produces a CXI aware image: public HPE CXI headers, libcxi, and
-# libfabric built with --enable-cxi.
+# Containerfile for Arkouda layered on a pre-built Chapel container
+# that contains both the CHPL_COMM=none and a distributed Chapel runtime.
+# Developed on top of Chapel images targeting HPE-Cray-EX with libfabric and CXI
+# provider. May be adaptable to other distributed Chapel builds.
 # ================================================================================
 
 # Build arguments for version control

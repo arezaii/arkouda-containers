@@ -3,6 +3,9 @@
 # - HPE Cray EX target runtime using libfabric 2.3.1 with CXI support
 # - Standard linux64 target runtime using CHPL_COMM=none, supports mason
 #
+# Produces a Chapel image suitable for building single-locale and distributed
+# programs. Provides Mason and the Chapel Python bindings. 
+
 # Corporate/intercepting-proxy root CA support:
 # Some networks (e.g. behind a TLS-inspecting proxy) present a certificate
 # chain signed by an internal root CA that isn't in the public ca-certificates
