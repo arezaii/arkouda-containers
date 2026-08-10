@@ -16,7 +16,7 @@ ARKOUDA_VERSION="2026.07.15"
 LIBICONV_VERSION="1.17"
 ARROW_VERSION="19.0.1-1"
 IMAGE_TAG=""
-BUILD_ARGS=""
+BUILD_ARGS=()
 LOG_FILE="build-arkouda-$(date +%Y%m%d-%H%M%S).log"
 VERBOSE=false
 
@@ -95,7 +95,7 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         -a|--build-arg)
-            BUILD_ARGS="$BUILD_ARGS --build-arg $2"
+            BUILD_ARGS+=(--build-arg "$2")
             shift 2
             ;;
         -d|--docker-cmd)
@@ -195,30 +195,34 @@ fi
 # path of the corporate/internal root CA (PEM). It is passed in as a BuildKit/
 # Buildah secret and is only mounted into the specific RUN steps that need it
 # during the build - it is never copied into the image or committed to any layer.
-SECRET_ARGS=""
+SECRET_ARGS=()
 if [ -n "${CORP_CA_FILE:-}" ]; then
     if [ ! -f "$CORP_CA_FILE" ]; then
         log_with_timestamp "ERROR: CORP_CA_FILE is set but not found: $CORP_CA_FILE"
         exit 1
     fi
     log_with_timestamp "Using corporate root CA from CORP_CA_FILE=${CORP_CA_FILE} (build-time only)"
-    SECRET_ARGS="--secret id=corp_ca,src=${CORP_CA_FILE}"
+    SECRET_ARGS=(--secret "id=corp_ca,src=${CORP_CA_FILE}")
 fi
 
-# Build the container with comprehensive logging
-BUILD_CMD="${DOCKER_CMD} build \
-    --progress=plain \
-    --file containers/Containerfile.arkouda \
-    --build-arg CHAPEL_BASE_IMAGE=${CHAPEL_BASE_IMAGE} \
-    --build-arg ARKOUDA_VERSION=${ARKOUDA_VERSION} \
-    --build-arg LIBICONV_VERSION=${LIBICONV_VERSION} \
-    --build-arg ARROW_VERSION=${ARROW_VERSION} \
-    ${BUILD_ARGS} \
-    ${SECRET_ARGS} \
-    --tag ${IMAGE_TAG} \
-    ."
+# Build the container with comprehensive logging. Built as an array (rather
+# than an interpolated string run through eval) so that values containing
+# spaces or shell metacharacters can't be re-parsed/re-executed by the shell.
+BUILD_CMD=(
+    "${DOCKER_CMD}" build
+    --progress=plain
+    --file containers/Containerfile.arkouda
+    --build-arg "CHAPEL_BASE_IMAGE=${CHAPEL_BASE_IMAGE}"
+    --build-arg "ARKOUDA_VERSION=${ARKOUDA_VERSION}"
+    --build-arg "LIBICONV_VERSION=${LIBICONV_VERSION}"
+    --build-arg "ARROW_VERSION=${ARROW_VERSION}"
+    "${BUILD_ARGS[@]}"
+    "${SECRET_ARGS[@]}"
+    --tag "${IMAGE_TAG}"
+    .
+)
 
-log_with_timestamp "Build command: $BUILD_CMD"
+log_with_timestamp "Build command: $(printf '%q ' "${BUILD_CMD[@]}")"
 log_with_timestamp "Starting container build..."
 echo
 
@@ -231,7 +235,7 @@ else
 fi
 
 # Execute build with full logging
-eval "$BUILD_CMD" 2>&1 | tee -a "${LOG_PATH}" | show_progress
+"${BUILD_CMD[@]}" 2>&1 | tee -a "${LOG_PATH}" | show_progress
 BUILD_EXIT_CODE=${PIPESTATUS[0]}
 
 echo
