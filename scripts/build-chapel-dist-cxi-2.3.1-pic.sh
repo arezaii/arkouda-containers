@@ -8,7 +8,6 @@ set -o pipefail
 # (build context for both target Containerfiles is always the repo root).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
-CONVERT_SCRIPT="${SCRIPT_DIR}/convert-to-sif.sh"
 
 # Version configurations (can be overridden with environment variables)
 LIBFABRIC_VERSION=${LIBFABRIC_VERSION:-2.3.1}
@@ -34,7 +33,6 @@ fi
 CONTAINER_NAME="chapel-${CHAPEL_VERSION}-libfabric-${LIBFABRIC_VERSION}-cxi-pic"
 CONTAINERFILE="containers/Containerfile.hpe-cray-ex-chapel-pic"
 PODMAN_IMAGE="localhost/${CONTAINER_NAME}:latest"
-OUTPUT_SIF="${CONTAINER_NAME}.sif"
 
 # Build container
 echo "Building Chapel-Arkouda server container with CXI provider support..."
@@ -66,7 +64,7 @@ echo ""
     echo "Build started at: $(date)"
     echo "=========================================="
     echo ""
-    echo "Command: $0 $@"
+    echo "Command: $0 $*"
     echo "Working directory: $(pwd)"
     echo ""
     echo "Build configuration:"
