@@ -86,32 +86,6 @@ setup_runtime() {
     esac
 }
 
-# If requested, try to bring up container-local SLURM helpers before launching.
-if [[ "${SLURM_CONTAINER_MODE:-false}" == "true" ]] && command -v slurmctld >/dev/null 2>&1; then
-    export PATH="/usr/sbin:/usr/bin:${PATH}"
-
-    mkdir -p /var/spool/slurm/ctld /var/spool/slurm/d /var/run/slurm /var/log/slurm /run/dbus
-    chmod 755 /var/spool/slurm /var/spool/slurm/ctld /var/spool/slurm/d /var/run/slurm /var/log/slurm || true
-    touch /var/spool/slurm/ctld/node_state \
-        /var/spool/slurm/ctld/job_state \
-        /var/spool/slurm/ctld/resv_state \
-        /var/spool/slurm/ctld/trigger_state
-
-    if command -v dbus-daemon >/dev/null 2>&1 && ! pgrep -x dbus-daemon >/dev/null 2>&1; then
-        dbus-daemon --system --print-address >/dev/null 2>&1 || true
-    fi
-
-    if ! pgrep -x munged >/dev/null 2>&1; then
-        service munge start 2>/dev/null || munged -f -D >/tmp/munged.log 2>&1 &
-    fi
-
-    if [[ -f /etc/slurm/slurm.conf ]]; then
-        export SLURM_CONF=/etc/slurm/slurm.conf
-        pgrep -x slurmctld >/dev/null 2>&1 || (slurmctld -D -f /etc/slurm/slurm.conf >/tmp/slurmctld.log 2>&1 &)
-        pgrep -x slurmd >/dev/null 2>&1 || (slurmd -D -f /etc/slurm/slurm.conf >/tmp/slurmd.log 2>&1 &)
-    fi
-fi
-
 if [[ $# -gt 0 ]] && [[ "$1" == "-h" || "$1" == "--help" ]]; then
     show_usage
     exit 0
