@@ -72,9 +72,9 @@ flowchart TD
 # 3. Run it on a single workstation (standalone CHPL_COMM=none server at
 #    arkouda_server) - see "Running the
 #    Arkouda container" below for the full command
-docker run --rm -it \
+docker run --rm -it --init \
   arkouda-2026.07.15-cxi:latest \
-  /bin/bash -lc 'arkouda_server'
+  /bin/bash -lc 'exec /opt/arkouda/arkouda_server'
 ```
 
 All scripts can be run from any directory — they resolve the repository root
@@ -163,9 +163,9 @@ For workstation/local validation, use the `CHPL_COMM=none` install tree and
 skip SLURM entirely:
 
 ```bash
-docker run --rm -it \
+docker run --rm -it --init \
   arkouda-2026.07.15-cxi:latest \
-  /bin/bash -lc 'arkouda_server'
+  /bin/bash -lc 'exec /opt/arkouda/arkouda_server'
 ```
 
 ### Background, with a bind mount and published port
