@@ -158,9 +158,12 @@ RUN cd /opt/arkouda && \
     ldconfig -p | grep -E "lib(arrow|parquet)" && \
     cp .configs/registration-config-multi-dim.json registration-config.json && \
     CHPL_FLAGS="--instantiate-max=1024" ARKOUDA_SKIP_CHECK_DEPS=true make ARRAY_ND_MAX=3 && \
-    cp -a /opt/arkouda /opt/arkouda-ofi && \
+    cp -a /opt/arkouda /opt/arkouda-dist && \
     CHPL_TARGET_PLATFORM=linux64 CHPL_COMM=none CHPL_LIBFABRIC=none CHPL_LAUNCHER=none \
-    CHPL_FLAGS="--instantiate-max=1024" ARKOUDA_SKIP_CHECK_DEPS=true make ARRAY_ND_MAX=3
+    CHPL_FLAGS="--instantiate-max=1024" ARKOUDA_SKIP_CHECK_DEPS=true make ARRAY_ND_MAX=3 && \
+    cp /opt/arkouda-dist/arkouda_server_real /opt/arkouda/arkouda_server_real && \
+    test -x /opt/arkouda/arkouda_server && \
+    test -x /opt/arkouda/arkouda_server_real
 
 # ========================================
 # Stage 2: Final Runtime Container
@@ -177,7 +180,7 @@ ARG LIBICONV_VERSION=1.17
 
 # Copy built Arkouda install trees and Python environment
 COPY --from=arkouda-builder /opt/arkouda /opt/arkouda
-COPY --from=arkouda-builder /opt/arkouda-ofi /opt/arkouda-ofi
+COPY --from=arkouda-builder /opt/arkouda-dist /opt/arkouda-dist
 COPY --from=arkouda-builder /opt/arkouda-venv /opt/arkouda-venv
 
 # Copy GNU libiconv libraries
@@ -232,7 +235,7 @@ RUN ldconfig -p | grep -q 'libhdf5'
 
 # Set up environment variables
 ENV ARKOUDA_HOME=/opt/arkouda \
-    ARKOUDA_HOME_OFI=/opt/arkouda-ofi \
+    ARKOUDA_HOME_OFI=/opt/arkouda-dist \
     ARKOUDA_VENV=/opt/arkouda-venv \
     VIRTUAL_ENV=/opt/arkouda-venv
 
@@ -252,7 +255,7 @@ CMD ["/bin/bash"]
 
 # Metadata capturing the actual build-arg values this image was built from
 LABEL org.opencontainers.image.title="arkouda" \
-      org.opencontainers.image.description="Arkouda built on a Chapel container with HPE-Cray-EX + CXI support" \
+      org.opencontainers.image.description="Arkouda built on a Chapel container" \
       arkouda.version="${ARKOUDA_VERSION}" \
       arkouda.runtime="hpe-cray-ex-ofi-cxi" \
       arkouda.chapel_base_image="${CHAPEL_BASE_IMAGE}" \

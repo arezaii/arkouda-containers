@@ -42,7 +42,9 @@ flowchart TD
 - **`Containerfile.arkouda`** takes that image as its
   `CHAPEL_BASE_IMAGE` build argument and builds Arkouda against whichever
   runtime is active in the base image's environment (`hpe-cray-ex`/OFI by
-  default), producing a single `arkouda_server` binary. The Arkouda Python
+  default), then rebuilds for `linux64`/`CHPL_COMM=none`. In the final image,
+  `/opt/arkouda` contains `arkouda_server` (standalone) and
+  `arkouda_server_real` (distributed). The Arkouda Python
   client package is installed editable (`pip install -e .[dev]`) into the
   same `/opt/arkouda-venv` virtual environment that's copied into the final
   runtime image, so `arkouda` is importable there too — it is not published
@@ -68,11 +70,16 @@ flowchart TD
 ./scripts/build-arkouda.sh
 
 # 3. Run it on a single workstation (standalone comm=none server at
-#    /opt/arkouda/arkouda_server) - see "Running the
+#    arkouda_server) - see "Running the
 #    Arkouda container" below for the full command
 docker run --rm -it \
+<<<<<<< HEAD
   arkouda-2026.07.15-cxi:latest \
   /bin/bash -lc '/opt/arkouda/arkouda_server'
+=======
+  arkouda-on-chapel-2026.07.15-cxi:latest \
+  /bin/bash -lc 'arkouda_server'
+>>>>>>> 4150b4f (add server to PATH, combine single and dist paths)
 ```
 
 All scripts can be run from any directory — they resolve the repository root
@@ -143,10 +150,9 @@ can't paper over the difference without lying about what it's doing. Use
 the `docker`/`podman` commands below directly, substituting `podman` for
 `docker` if that's your container CLI.
 
-> **Runtime split:** this image carries two Arkouda install trees with standard
-> Arkouda binary names in each tree. Use `/opt/arkouda/arkouda_server` for
-> standalone single-node runs (`CHPL_COMM=none`). Use
-> `/opt/arkouda-ofi/arkouda_server_real` for distributed/HPC launch paths.
+> **Runtime split:** use `arkouda_server` for standalone single-node runs
+> (`CHPL_COMM=none`) and `arkouda_server_real` for distributed/HPC launch
+> paths. Both names are available from the default shell `PATH`.
 
 ### Interactive shell
 
@@ -154,9 +160,7 @@ the `docker`/`podman` commands below directly, substituting `podman` for
 docker run --rm -it arkouda-2026.07.15-cxi:latest /bin/bash
 ```
 
-The Arkouda server binaries live under `/opt/arkouda/` in the image. They are
-not exported on the default shell `$PATH`, so launch commands should use the
-absolute path.
+The Arkouda server binaries are available directly on the default shell `PATH`.
 
 ### Single-node run (1 locale, preferred)
 
@@ -166,7 +170,7 @@ skip SLURM entirely:
 ```bash
 docker run --rm -it \
   arkouda-2026.07.15-cxi:latest \
-  /bin/bash -lc '/opt/arkouda/arkouda_server'
+  /bin/bash -lc 'arkouda_server'
 ```
 
 ### Background, with a bind mount and published port
@@ -174,8 +178,13 @@ docker run --rm -it \
 ```bash
 docker run --rm -d \
   -v "$(pwd)/data:/data" -p 5555:5555 \
+<<<<<<< HEAD
   arkouda-2026.07.15-cxi:latest \
   /bin/bash -lc '/opt/arkouda/arkouda_server --port=5555'
+=======
+  arkouda-on-chapel-2026.07.15-cxi:latest \
+  /bin/bash -lc 'arkouda_server --port=5555'
+>>>>>>> 4150b4f (add server to PATH, combine single and dist paths)
 ```
 
 ### Distributed multi-node runs on real HPE Cray EX hardware
@@ -298,7 +307,7 @@ run.
 ### 3. Launch Arkouda across multiple nodes
 
 Use the same locale count for `srun --nodes`, `srun --ntasks`, and
-`/opt/arkouda-ofi/arkouda_server_real -nl`:
+`arkouda_server_real -nl`:
 
 ```bash
 LOCALES=2
@@ -312,7 +321,7 @@ e4s-cl launch --profile arkouda-hpe-ex srun \
   --time=08:00:00 \
   --kill-on-bad-exit \
   --export=ALL,FI_PROVIDER=cxi \
-  -- /opt/arkouda-ofi/arkouda_server_real -nl "${LOCALES}" --logLevel=INFO
+  -- arkouda_server_real -nl "${LOCALES}" --logLevel=INFO
 ```
 
 The `--` separator is intentional: it keeps `srun` options from being
@@ -383,8 +392,10 @@ CHPL_LAUNCHER=none
 
 `Containerfile.arkouda` now builds two Arkouda install trees:
 
-- `/opt/arkouda` for `linux64`/`CHPL_COMM=none` standalone runs
-- `/opt/arkouda-ofi` for `hpe-cray-ex`/OFI distributed runs
+- `/opt/arkouda` for user-facing launches with both names:
+  `arkouda_server` (`CHPL_COMM=none`) and `arkouda_server_real` (distributed)
+- `/opt/arkouda-ofi` retained as the full OFI install tree used to source the
+  distributed `arkouda_server_real` binary
 
 ## Troubleshooting
 
@@ -402,21 +413,21 @@ the base image.
 
 **`arkouda_server` or `arkouda_server_real` not found after opening a shell**
 
-The final image does not add Arkouda server directories to the default shell
-`$PATH`. Launch with an absolute path, for example
-`/opt/arkouda/arkouda_server` (standalone) or
-`/opt/arkouda-ofi/arkouda_server_real -nl 2` (distributed).
+Both binaries should be on `PATH` in the final image. If either is missing,
+the image may have been built from an older `Containerfile.arkouda` revision.
+Rebuild with `./scripts/build-arkouda.sh` and validate inside a shell with
+`which arkouda_server arkouda_server_real`.
 
 **`e4s-cl` multi-locale launch fails with `cxil_map: write error` / `fi_mr_reg(...): Cannot allocate memory`**
 
 The verified Hotlum failure mode for
-`e4s-cl launch ... -- /opt/arkouda-ofi/arkouda_server_real -nl 2` is CXI/libfabric
+`e4s-cl launch ... -- arkouda_server_real -nl 2` is CXI/libfabric
 memory-registration failure during Chapel runtime startup. In the captured
 logs, the failure starts with `cxil_map: write error`, then
 `cxip_do_map(...): Cannot allocate memory`, and finally bubbles up as
 `fi_mr_reg(...): Cannot allocate memory`, even with
 `CHPL_RT_MAX_HEAP_SIZE=50%` exported through `srun`. Keep `FI_PROVIDER=cxi`,
-use `/opt/arkouda-ofi/arkouda_server_real`, and treat `CHPL_RT_MAX_HEAP_SIZE` as a site-specific
+use `arkouda_server_real`, and treat `CHPL_RT_MAX_HEAP_SIZE` as a site-specific
 knob that still needs tuning rather than a documented fix.
 
 **Validate the Chapel base image directly**
