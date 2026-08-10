@@ -1,4 +1,4 @@
-# Arkouda on Chapel — Container Build Framework
+# Arkouda — Container Build Framework
 
 Container build framework for running [Arkouda](https://github.com/Bears-R-Us/arkouda)
 on [Chapel](https://chapel-lang.org/) with HPE Cray EX (Slingshot/CXI) support,
@@ -21,9 +21,9 @@ See **[docs/README.md](docs/README.md)** for the full build and usage guide.
 ./scripts/build-arkouda.sh
 
 # 3. Run it on a single workstation (standalone comm=none server)
-docker run --rm -it \
+docker run --rm -it --init \
   arkouda-2026.07.15-cxi:latest \
-  /bin/bash -lc 'arkouda_server'
+  /bin/bash -lc 'exec /opt/arkouda/arkouda_server'
 ```
 
 See [docs/README.md](docs/README.md#3-running-the-arkouda-container)
@@ -34,7 +34,7 @@ for workstation vs. distributed HPE Cray EX (`e4s-cl`) run commands.
 ```
 containers/
 ├── Containerfile.hpe-cray-ex-chapel-pic  # Chapel base image (target 1)
-└── Containerfile.arkouda                 # Arkouda on Chapel (target 2)
+└── Containerfile.arkouda                 # Arkouda (target 2)
 scripts/
 ├── build-chapel-dist-cxi-2.3.1-pic.sh    # builds the Chapel base image
 ├── build-arkouda.sh                      # builds Arkouda on the Chapel base image
