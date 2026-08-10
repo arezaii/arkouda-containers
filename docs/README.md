@@ -426,15 +426,3 @@ docker run --rm localhost/chapel-2.9.0-libfabric-2.3.1-cxi-pic:latest chapel-val
 ```
 Checks that `chpl`, libfabric, PMI2, and (if present) the CXI dev headers are
 all in place, then runs a Chapel compile smoke test.
-
-## Legacy / reference material
-
-These are kept for historical reference but are **not** part of the
-maintained build framework:
-
-| Path | What it is |
-|---|---|
-| `containers/legacy/`, `scripts/legacy/`, `patches/legacy/` | The original monolithic `Containerfile.chapel-arkouda` (builds Chapel/libfabric/SLURM from source) and the standalone `Containerfile.arkouda-client` image, with their build/run scripts and patches |
-| `docs/driver-container-design.md` | Design notes exploring a SLURM-controller "driver" container for nested Apptainer execution — not implemented |
-| `slurm-docker-cluster/` | A vendored copy of [giovtorres/slurm-docker-cluster](https://github.com/giovtorres/slurm-docker-cluster), kept as a reference for future driver-container work |
-| `results/`, `hotlum-ak-results.tar.gz` | Benchmark data from prior performance investigations, unrelated to building these containers |
