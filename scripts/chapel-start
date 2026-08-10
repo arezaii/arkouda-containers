@@ -29,6 +29,16 @@ if [[ -d "/opt/cxi-dev/lib" ]]; then
     export PKG_CONFIG_PATH="/opt/cxi-dev/lib/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}"
 fi
 
+# When running under e4s-cl, the host-injected libs in /.e4s-cl/hostlibs must
+# take precedence over the container's bundled /opt/cxi-dev copy.  The host
+# libfabric (2.3.1+) requires LIBCXI_1.9 / LIBCXI_1.10 symbols that the
+# container's libcxi.so.1 does not provide, so prepending /opt/cxi-dev/lib
+# above would shadow the correct host library.  Re-promote the hostlibs dir
+# here to restore the intended search order.
+if [[ -d "/.e4s-cl/hostlibs" ]]; then
+    export LD_LIBRARY_PATH="/.e4s-cl/hostlibs${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+fi
+
 show_usage() {
     cat <<'EOF'
 Usage:

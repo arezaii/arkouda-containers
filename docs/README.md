@@ -380,7 +380,7 @@ e4s-cl launch --profile arkouda-hpe-ex srun \
   --exclusive \
   --time=08:00:00 \
   --kill-on-bad-exit \
-  --export=ALL,FI_PROVIDER=cxi \
+  --export=ALL,FI_PROVIDER=cxi,APPTAINERENV_CHPL_RT_MAX_HEAP_SIZE=50% \
   -- arkouda_server_real -nl "${LOCALES}" --logLevel=INFO
 ```
 
