@@ -1,4 +1,6 @@
 #!/bin/bash
+# LEGACY - reference only, not actively maintained. Contains a hardcoded
+# HPC-specific bind path; review before use. Pairs with containers/legacy/Containerfile.chapel-arkouda.
 # Arkouda server container launcher
 
 set -e

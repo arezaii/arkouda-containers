@@ -1,4 +1,7 @@
 #!/bin/bash
+# LEGACY - only used by containers/legacy/Containerfile.chapel-arkouda's from-source
+# build. Kept for reference only; not actively maintained.
+#
 # download-build-dependencies.sh
 # ==============================
 # Pre-download source tarballs for container build

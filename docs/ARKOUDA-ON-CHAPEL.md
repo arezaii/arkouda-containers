@@ -1,6 +1,16 @@
 # Building Arkouda on Pre-built Chapel Container
 
+> **Superseded:** this document has been folded into the unified
+> [docs/README.md](README.md) guide, which reflects the current
+> `Containerfile.hpe-cray-ex-chapel-pic` / `Containerfile.arkouda`
+> pair and its documented `docker`/`podman run` and `e4s-cl` launch
+> commands. Some details below (image names, dual
+> `arkouda_server-ofi`/`arkouda_server-none` binaries,
+> `arkouda-select-runtime`) describe an earlier, aspirational design and do
+> not match the current Containerfiles — kept for historical context only.
+
 This approach builds Arkouda on top of a pre-built Chapel container (`chapel:hpe-cray-ex-main`) that already contains Chapel runtimes for both HPE Cray EX (multi-node with OFI) and Linux64 (single-node with comm=none) platforms.
+
 
 ## Benefits
 

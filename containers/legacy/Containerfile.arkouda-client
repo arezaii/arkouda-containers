@@ -1,3 +1,6 @@
+# LEGACY - not part of the hpe-cray-ex-chapel-pic / arkouda build
+# framework. Kept for reference only; not actively maintained.
+#
 # Lightweight Arkouda client container
 # Matches server Python version (3.12) for apply/checkpoint compatibility
 FROM ubuntu:24.04

@@ -1,3 +1,6 @@
+# LEGACY - superseded by Containerfile.hpe-cray-ex-chapel-pic + Containerfile.arkouda.
+# Kept for reference only; not actively maintained or rebuilt in CI.
+#
 # Multi-stage Containerfile for Chapel and Arkouda with OFI + libfabric support
 # Specialized for distributed execution on HPE Cray EX systems
 # Chapel CHPL_COMM=ofi uses libfabric directly

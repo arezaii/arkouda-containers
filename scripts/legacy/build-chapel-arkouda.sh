@@ -1,11 +1,15 @@
 #!/bin/bash
-# Build script for Chapel-Arkouda server container
+# LEGACY - superseded by build-chapel-dist-cxi-2.3.1-pic.sh + build-arkouda.sh.
+# Kept for reference only; not actively maintained. Run from containers/legacy/:
+#   cd containers/legacy && ../../scripts/legacy/build-chapel-arkouda.sh
+#
+# Build script for Chapel-Arkouda server container (original monolithic build)
 
 set -e
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONVERT_SCRIPT="${SCRIPT_DIR}/convert-to-sif.sh"
+CONVERT_SCRIPT="${SCRIPT_DIR}/../convert-to-sif.sh"
 
 # Version configurations (can be overridden with environment variables)
 LIBFABRIC_VERSION=${LIBFABRIC_VERSION:-1.19.0}
@@ -30,11 +34,11 @@ if [ ! -f "$CONTAINERFILE" ]; then
 fi
 
 # Copy patches/ to context
-cp -r $SCRIPT_DIR/../patches .
-cp -r $SCRIPT_DIR/../configs .
+cp -r $SCRIPT_DIR/../../patches .
+cp -r $SCRIPT_DIR/../../configs .
 mkdir -p ./scripts/
-cp $SCRIPT_DIR/../scripts/startup-slurm-for-container.sh ./scripts/.
-cp $SCRIPT_DIR/../scripts/slurm-start.sh ./scripts/.
+cp $SCRIPT_DIR/../startup-slurm-for-container.sh ./scripts/.
+cp $SCRIPT_DIR/../slurm-start.sh ./scripts/.
 
 # Build with Podman
 echo "Building with versions: libfabric=${LIBFABRIC_VERSION}, SLURM=${SLURM_VERSION}, libiconv=${LIBICONV_VERSION}, Arrow=${ARROW_VERSION}, Chapel=${CHAPEL_VERSION}, Arkouda=${ARKOUDA_VERSION}"
@@ -57,7 +61,7 @@ if [ $BUILD_EXIT_CODE -ne 0 ]; then
     exit 1
 fi
 
-rm -rf $SCRIPT_DIR/../containers/patches $SCRIPT_DIR/../containers/configs $SCRIPT_DIR/../containers/scripts
+rm -rf $SCRIPT_DIR/../../containers/legacy/patches $SCRIPT_DIR/../../containers/legacy/configs $SCRIPT_DIR/../../containers/legacy/scripts
 
 # Convert to SIF using shared conversion script
 echo "Converting to SIF format using convert-to-sif.sh..."

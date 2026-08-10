@@ -1,4 +1,6 @@
 #!/bin/bash
+# LEGACY - reference only, not actively maintained.
+# Pairs with containers/legacy/Containerfile.arkouda-client.
 # Arkouda client container launcher
 
 set -e

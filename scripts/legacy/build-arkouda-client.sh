@@ -1,11 +1,16 @@
 #!/bin/bash
+# LEGACY - client image unrelated to the hpe-cray-ex-chapel-pic / arkouda
+# build framework. Kept for reference only; not actively maintained. Run from
+# containers/legacy/:
+#   cd containers/legacy && ../../scripts/legacy/build-arkouda-client.sh
+#
 # Build script for Arkouda client container
 
 set -e
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONVERT_SCRIPT="${SCRIPT_DIR}/convert-to-sif.sh"
+CONVERT_SCRIPT="${SCRIPT_DIR}/../convert-to-sif.sh"
 
 # Version configurations (can be overridden with environment variables)
 ARROW_VERSION=${ARROW_VERSION:-19.0.1}
@@ -28,9 +33,9 @@ if [ ! -f "$CONTAINERFILE" ]; then
 fi
 
 # Copy patch files from patches directory to build context
-cp ../patches/conftest.patch .
-cp ../patches/arkouda_index_test_temp_fix.patch .
-cp ../patches/benchmark_conftest.patch .
+cp ../../patches/legacy/conftest.patch .
+cp ../../patches/legacy/arkouda_index_test_temp_fix.patch .
+cp ../../patches/legacy/benchmark_conftest.patch .
 
 # Clean previous builds
 # podman rmi "$PODMAN_IMAGE" 2>/dev/null || true
