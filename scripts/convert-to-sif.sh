@@ -7,6 +7,7 @@ set -e
 # Configuration
 KEEP_ARCHIVE="${KEEP_ARCHIVE:-false}"
 OUTPUT_DIR="${OUTPUT_DIR:-$(pwd)}"
+FORCE_OVERWRITE="${FORCE_OVERWRITE:-false}"
 
 # Help function
 show_help() {
@@ -22,17 +23,20 @@ Options:
     -k, --keep-archive    Keep the intermediate OCI archive file (default: false)
     -o, --output-dir DIR  Output directory for files (default: current directory)
     -f, --filename NAME   Custom filename (without extension) for output files
+    -y, --force           Overwrite existing SIF output without prompting
     -h, --help           Show this help message
 
 Environment Variables:
     KEEP_ARCHIVE         Keep intermediate files (true/false)
     OUTPUT_DIR           Default output directory
+    FORCE_OVERWRITE      Overwrite existing SIF output without prompting (true/false)
 
 Examples:
     $0 docker.io/ubuntu:22.04
     $0 localhost/myapp:v1.0 --keep-archive
     $0 registry.io/user/app:latest -o /tmp
     $0 docker.io/ubuntu:22.04 --filename my-ubuntu
+    $0 localhost/myapp:v1.0 --force
 EOF_HELP
 }
 
@@ -52,6 +56,10 @@ while [[ $# -gt 0 ]]; do
         -f|--filename)
             CUSTOM_FILENAME="$2"
             shift 2
+            ;;
+        -y|--force)
+            FORCE_OVERWRITE="true"
+            shift
             ;;
         -h|--help)
             show_help
@@ -148,11 +156,15 @@ echo ""
 # Check if SIF already exists
 if [ -f "$SIF_FILE" ]; then
     echo "Warning: SIF file already exists: $SIF_FILE"
-    read -p "Overwrite? (y/N): " -n 1 -r
-    echo ""
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        echo "Aborted."
-        exit 0
+    if [ "$FORCE_OVERWRITE" = "true" ]; then
+        echo "Force enabled: overwriting existing SIF without prompt"
+    else
+        read -p "Overwrite? (y/N): " -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo "Aborted."
+            exit 0
+        fi
     fi
     rm -f "$SIF_FILE"
 fi
