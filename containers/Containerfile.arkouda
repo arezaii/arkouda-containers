@@ -176,9 +176,11 @@ ARG ARKOUDA_VERSION=2026.07.15
 ARG ARROW_VERSION=19.0.1-1
 ARG LIBICONV_VERSION=1.17
 
-# Copy built Arkouda install trees and Python environment
+# Copy built Arkouda install tree and Python environment. /opt/arkouda-dist
+# (the builder stage's scratch copy of the OFI tree, used only to preserve
+# arkouda_server_real across the second/linux64 make) is intentionally not
+# copied here - that binary is already merged into /opt/arkouda.
 COPY --from=arkouda-builder /opt/arkouda /opt/arkouda
-COPY --from=arkouda-builder /opt/arkouda-dist /opt/arkouda-dist
 COPY --from=arkouda-builder /opt/arkouda-venv /opt/arkouda-venv
 
 # Copy GNU libiconv libraries
@@ -233,7 +235,6 @@ RUN ldconfig -p | grep -q 'libhdf5'
 
 # Set up environment variables
 ENV ARKOUDA_HOME=/opt/arkouda \
-    ARKOUDA_HOME_OFI=/opt/arkouda-dist \
     ARKOUDA_VENV=/opt/arkouda-venv \
     VIRTUAL_ENV=/opt/arkouda-venv
 

@@ -451,12 +451,18 @@ CHPL_LIBFABRIC=none
 CHPL_LAUNCHER=none
 ```
 
-`Containerfile.arkouda` now builds two Arkouda install trees:
+`Containerfile.arkouda` builds both Arkouda server variants but only ships
+one install tree in the final image:
 
 - `/opt/arkouda` for user-facing launches with both names:
   `arkouda_server` (`CHPL_COMM=none`) and `arkouda_server_real` (distributed)
-- `/opt/arkouda-ofi` retained as the full OFI install tree used to source the
-  distributed `arkouda_server_real` binary
+
+The builder stage also produces a scratch copy at `/opt/arkouda-dist` (the
+full OFI build tree) solely to preserve `arkouda_server_real` across the
+second, `linux64`/`CHPL_COMM=none` `make` that overwrites `/opt/arkouda` -
+that binary is copied into `/opt/arkouda` before the final image is
+assembled, so `/opt/arkouda-dist` itself is not copied into the runtime
+image.
 
 ## Troubleshooting
 
