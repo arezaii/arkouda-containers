@@ -270,13 +270,13 @@ run_generated_command() {
     local cmd="$1"
     local path
 
-    if [[ "$cmd" =~ ^e4s-cl[[:space:]]+profile[[:space:]]+edit[[:space:]]+--add-libraries[[:space:]]+"([^"]+)"$ ]]; then
+    if [[ "$cmd" =~ ^e4s-cl[[:space:]]+profile[[:space:]]+edit[[:space:]]+--add-libraries[[:space:]]+\"([^\"]+)\"$ ]]; then
         path="${BASH_REMATCH[1]}"
         e4s-cl profile edit --add-libraries "$path"
         return
     fi
 
-    if [[ "$cmd" =~ ^e4s-cl[[:space:]]+profile[[:space:]]+edit[[:space:]]+--add-files[[:space:]]+"([^"]+)"$ ]]; then
+    if [[ "$cmd" =~ ^e4s-cl[[:space:]]+profile[[:space:]]+edit[[:space:]]+--add-files[[:space:]]+\"([^\"]+)\"$ ]]; then
         path="${BASH_REMATCH[1]}"
         e4s-cl profile edit --add-files "$path"
         return
