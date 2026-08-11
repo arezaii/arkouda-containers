@@ -45,10 +45,9 @@ if [ ! -f "$CONTAINERFILE" ]; then
     exit 1
 fi
 
-# NOTE: $CONTAINERFILE only COPYs scripts/chapel-start, scripts/chapel-test-compile,
-# and scripts/chapel-validate-hpe-ex, all of which live in the top-level scripts/
-# directory. The build context is the repo root, so no other files need to be
-# staged - COPY paths inside the Containerfile resolve relative to $REPO_ROOT.
+# NOTE: $CONTAINERFILE only COPYs scripts/chapel-start, scripts/chapel-test-compile
+# which live in the top-level scripts/ directory. The build context is the repo root,
+# so no other files need to be staged - COPY paths inside the Containerfile resolve relative to $REPO_ROOT.
 
 # Create build log directory
 BUILD_LOG_DIR="${REPO_ROOT}/build-logs"

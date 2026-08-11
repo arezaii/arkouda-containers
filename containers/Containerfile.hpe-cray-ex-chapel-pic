@@ -320,11 +320,9 @@ COPY --from=libfabric-build /opt/libfabric /opt/libfabric
 COPY --from=chapel-hpe-cray-ex-build /opt/chapel /opt/chapel
 COPY scripts/chapel-start /usr/local/bin/chapel-start
 COPY scripts/chapel-test-compile /usr/local/bin/chapel-test-compile
-COPY scripts/chapel-validate-hpe-ex /usr/local/bin/chapel-validate-hpe-ex
 
 RUN chmod +x /usr/local/bin/chapel-start \
              /usr/local/bin/chapel-test-compile \
-             /usr/local/bin/chapel-validate-hpe-ex && \
     mkdir -p /var/log/chapel /tmp/chapel /run/chapel && \
     chmod 755 /var/log/chapel /tmp/chapel /run/chapel
 
