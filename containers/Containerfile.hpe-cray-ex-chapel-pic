@@ -235,7 +235,6 @@ RUN CHPL_TARGET_PLATFORM=hpe-cray-ex \
     CHPL_COMM_OFI_OOB=pmi2 \
     CHPL_LAUNCHER=slurm-srun \
     CHPL_LOCALE_MODEL=flat \
-    CHPL_AUX_FILESYS=none \
     bash -lc 'make_threads="${MAKE_THREADS}"; \
     if [[ -z "${make_threads}" || "${make_threads}" == "auto" ]]; then \
         make_threads="$(nproc)"; \
@@ -307,7 +306,6 @@ ENV CHPL_LIBFABRIC=system
 ENV CHPL_COMM_OFI_OOB=pmi2
 ENV CHPL_LAUNCHER=slurm-srun
 ENV CHPL_LOCALE_MODEL=flat
-ENV CHPL_AUX_FILESYS=none
 ENV CHPL_RT_COMM_OFI_PROVIDER=cxi
 ENV CHPL_RT_COMM_OFI_OOB=pmi2
 ENV CHPL_RT_COMM_OFI_DEDICATED_AMH_CORES=true

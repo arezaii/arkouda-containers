@@ -95,14 +95,6 @@ add_dir_to_profile "/usr/lib64/slurm" "SLURM library directory"
 # SLURM spool directory
 add_dir_to_profile "/var/spool/slurm" "SLURM spool directory"
 
-# SLURM executables (not working without user info)
-# echo "# SLURM executables"
-# for exe in srun sbatch salloc squeue sinfo scontrol; do
-#     if [ -x "/usr/bin/$exe" ]; then
-#         add_dir_to_profile "/usr/bin/$exe" "SLURM executable: $exe"
-#     fi
-# done
-
 echo ""
 echo "# === Cray Programming Environment ==="
 add_dir_to_profile "/opt/cray" "Cray Programming Environment root"

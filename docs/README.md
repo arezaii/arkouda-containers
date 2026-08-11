@@ -156,7 +156,7 @@ docker run --rm -it arkouda-2026.07.15-cxi:latest /bin/bash
 
 The Arkouda server binaries are available directly on the default shell `PATH`.
 
-### Single-node run (1 locale, preferred)
+### Single-node run (1 locale)
 
 For workstation/local validation, use the `CHPL_COMM=none` install tree and
 skip SLURM entirely:
