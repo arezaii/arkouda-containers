@@ -320,7 +320,7 @@ COPY scripts/chapel-start /usr/local/bin/chapel-start
 COPY scripts/chapel-test-compile /usr/local/bin/chapel-test-compile
 
 RUN chmod +x /usr/local/bin/chapel-start \
-             /usr/local/bin/chapel-test-compile \
+             /usr/local/bin/chapel-test-compile && \
     mkdir -p /var/log/chapel /tmp/chapel /run/chapel && \
     chmod 755 /var/log/chapel /tmp/chapel /run/chapel
 
