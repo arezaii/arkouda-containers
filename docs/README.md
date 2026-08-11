@@ -76,9 +76,9 @@ docker run --rm -it --init \
   /bin/bash -lc 'exec /opt/arkouda/arkouda_server'
 ```
 
-All scripts can be run from any directory — they resolve the repository root
-relative to their own location, and both Containerfiles use the repository
-root as their build context.
+All scripts can be run from any directory — they resolve their own project
+directory relative to their own location, and both Containerfiles use that
+directory as their build context.
 
 ## 1. Building the Chapel base image
 

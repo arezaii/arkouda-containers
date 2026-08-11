@@ -5,8 +5,9 @@
 
 set -e
 
-# Resolve the repo root regardless of the caller's cwd (build context for
-# both target Containerfiles is always the repo root).
+# Resolve this project's root directory regardless of the caller's cwd
+# (build context for both target Containerfiles is always this directory,
+# regardless of where the project itself lives on disk).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONTAINER_DIR="$(dirname "$SCRIPT_DIR")"
 
@@ -181,7 +182,7 @@ log_with_timestamp "Docker command:     ${DOCKER_CMD}"
 log_with_timestamp "Verbose mode:       ${VERBOSE}"
 echo
 
-# Change to the repo root, which is the build context for the Containerfile
+# Change to the project directory, which is the build context for the Containerfile
 log_with_timestamp "Changing to build directory: ${CONTAINER_DIR}"
 cd "$CONTAINER_DIR"
 

@@ -4,10 +4,11 @@
 set -e
 set -o pipefail
 
-# Get the directory where this script is located, and resolve the repo root
-# (build context for both target Containerfiles is always the repo root).
+# Get the directory where this script is located, and resolve this project's
+# root directory (build context for both target Containerfiles is always
+# this directory, regardless of where the project itself lives on disk).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 # Version configurations (can be overridden with environment variables)
 LIBFABRIC_VERSION=${LIBFABRIC_VERSION:-2.3.1}
@@ -38,7 +39,7 @@ PODMAN_IMAGE="localhost/${CONTAINER_NAME}:latest"
 echo "Building Chapel-Arkouda server container with CXI provider support..."
 echo ""
 
-cd "$REPO_ROOT"
+cd "$PROJECT_DIR"
 
 if [ ! -f "$CONTAINERFILE" ]; then
     echo "ERROR: $CONTAINERFILE not found"
@@ -46,11 +47,11 @@ if [ ! -f "$CONTAINERFILE" ]; then
 fi
 
 # NOTE: $CONTAINERFILE only COPYs scripts/chapel-start, scripts/chapel-test-compile
-# which live in the top-level scripts/ directory. The build context is the repo root,
-# so no other files need to be staged - COPY paths inside the Containerfile resolve relative to $REPO_ROOT.
+# which live in this project's scripts/ directory. The build context is this project
+# directory, so no other files need to be staged - COPY paths inside the Containerfile resolve relative to $PROJECT_DIR.
 
 # Create build log directory
-BUILD_LOG_DIR="${REPO_ROOT}/build-logs"
+BUILD_LOG_DIR="${PROJECT_DIR}/build-logs"
 mkdir -p "$BUILD_LOG_DIR"
 BUILD_LOG="${BUILD_LOG_DIR}/cxi-build-$(date +%Y%m%d_%H%M%S).log"
 
