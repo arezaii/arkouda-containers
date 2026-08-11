@@ -200,7 +200,11 @@ COPY scripts/chapel-test-compile /usr/local/bin/chapel-test-compile
 RUN chmod +x /usr/local/bin/chapel-test-compile
 
 ENV LANG=en_US.UTF-8
-ENV PATH=/opt/libfabric/bin:${CHPL_HOME}/bin/linux64-x86_64:${CHPL_HOME}/util:${PATH}
+# Chapel names its compiler bin dir bin/linux64-<arch> (e.g. linux64-x86_64,
+# linux64-aarch64) after the *build host's* arch, so it can't be hardcoded
+# here. bin/linux64-host is a symlink to the real dir, created below once the
+# Chapel build actually exists.
+ENV PATH=/opt/libfabric/bin:${CHPL_HOME}/bin/linux64-host:${CHPL_HOME}/util:${PATH}
 ENV LD_LIBRARY_PATH=/opt/libfabric/lib:/opt/cxi-dev/lib
 ENV LIBRARY_PATH=/opt/libfabric/lib:/opt/cxi-dev/lib
 ENV CPATH=/opt/libfabric/include:/opt/cxi-dev/include
@@ -257,6 +261,12 @@ RUN --mount=type=secret,id=corp_ca,target=/tmp/corp-ca.crt,required=false \
     make mason' && \
     rm -f /tmp/build-ca-bundle.crt
 
+# Point the arch-agnostic bin/linux64-host symlink (referenced by PATH above)
+# at whichever bin/linux64-<arch> dir this build host actually produced.
+RUN chpl_bin_dir="$(find "${CHPL_HOME}/bin" -mindepth 1 -maxdepth 1 -type d -name 'linux64-*' -print -quit)" && \
+    test -n "${chpl_bin_dir}" && \
+    ln -s "$(basename "${chpl_bin_dir}")" "${CHPL_HOME}/bin/linux64-host"
+
 RUN /usr/local/bin/chapel-test-compile
 
 RUN rm -rf .git && \
@@ -274,7 +284,9 @@ ARG LIBFABRIC_VERSION=2.3.1
 ARG CHAPEL_VERSION=2.9.0
 
 ENV CHPL_HOME=/opt/chapel
-ENV PATH=/opt/libfabric/bin:/opt/chapel/bin/linux64-x86_64:/opt/chapel/util:${PATH}
+# bin/linux64-host is the arch-agnostic symlink created in the
+# chapel-hpe-cray-ex-build stage and copied below along with /opt/chapel.
+ENV PATH=/opt/libfabric/bin:/opt/chapel/bin/linux64-host:/opt/chapel/util:${PATH}
 ENV LD_LIBRARY_PATH=/opt/libfabric/lib:/opt/cxi-dev/lib
 ENV LIBRARY_PATH=/opt/libfabric/lib:/opt/cxi-dev/lib
 ENV CPATH=/opt/libfabric/include:/opt/cxi-dev/include
